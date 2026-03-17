@@ -12,7 +12,7 @@ import sys
 import tempfile
 
 from lib import config, download, tracking
-from lib.download import parse_timestamp_from_filename
+from lib.download import parse_timestamp_from_filename, iterate_files_in_periods
 
 
 def print_stats():
@@ -132,15 +132,13 @@ def main():
     if use_url:
         print(f"\n📥 Auto-discovering NetCDF files...")
         print(f"   Base URL: {config.BASE_URL}")
-        print(f"   Years: {config.YEARS_TO_PROCESS}")
+        print(f"   Periods: {[f'{y}/{m:02d}' for y, m in config.PERIODS_TO_PROCESS]}")
         print(f"   Hours: {config.HOURS}\n")
         
         # Use auto-discovery iterator (with PostgreSQL tracking)
-        from lib.download import iterate_all_files_in_year
-        
-        for filename, file_url, metadata in iterate_all_files_in_year(
+        for filename, file_url, metadata in iterate_files_in_periods(
             base_url=config.BASE_URL,
-            years=config.YEARS_TO_PROCESS,
+            periods=config.PERIODS_TO_PROCESS,
             hours=config.HOURS,
             use_tracking=use_tracking and not force_reprocess
         ):

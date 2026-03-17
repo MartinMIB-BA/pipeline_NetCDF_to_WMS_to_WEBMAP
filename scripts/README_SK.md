@@ -46,13 +46,8 @@ scripts/
 
 ```bash
 cd scripts
-bash setup_venv.sh
-```
-
-Alebo manuálne:
-```bash
-python3 -m venv venv
-source venv/bin/activate
+conda create -n wms python=3.12
+conda activate wms
 pip install -r requirements.txt
 ```
 
@@ -137,7 +132,7 @@ HOURS = ["00", "12"]       # Hodinové behy (2x denne)
 
 **S URL sťahovaním (odporúčané):**
 ```bash
-source venv/bin/activate
+conda activate wms
 python run_all_wms.py --use-url
 ```
 
