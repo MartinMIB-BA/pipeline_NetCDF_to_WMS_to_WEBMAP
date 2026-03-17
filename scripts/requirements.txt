@@ -1,0 +1,23 @@
+# Required packages for WMS scripts
+# NetCDF and geospatial processing
+xarray>=2023.1.0
+rioxarray>=0.15.0
+netCDF4>=1.6.0
+
+# Numpy for numerical operations
+numpy>=1.24.0
+
+# PostgreSQL/PostGIS connection
+psycopg2-binary>=2.9.0
+
+# Progress bar
+tqdm>=2.9.0
+
+# HTTP requests for GeoServer API
+requests>=2.31.0
+
+# GDAL/Rasterio dependencies (required by rioxarray)
+rasterio>=1.3.0
+
+# Environment variable loading
+python-dotenv>=1.0.0

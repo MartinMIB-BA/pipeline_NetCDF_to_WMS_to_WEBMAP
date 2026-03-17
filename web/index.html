@@ -1,0 +1,1412 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Copernicus EMS - Floods | Testing Environment</title>
+
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,300;0,14..32,400;0,14..32,500;0,14..32,600;0,14..32,700;1,14..32,400&family=JetBrains+Mono:wght@400;500;600&display=swap"
+        rel="stylesheet">
+    <!-- FontAwesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+    <style>
+        /* ═══════════════════════════════════════════════════════════════
+           GEOENV MONITOR — HIGH-END GLASSMORPHISM DESIGN SYSTEM
+           ═══════════════════════════════════════════════════════════════ */
+        :root {
+            --primary: #58ccff;
+            --primary-dim: rgba(88, 204, 255, 0.22);
+            --primary-glow: rgba(88, 204, 255, 0.38);
+            --primary-border: rgba(88, 204, 255, 0.36);
+            --accent: #3ddfb1;
+            --accent-glow: rgba(61, 223, 177, 0.34);
+            --warning: #fbbf24;
+            --danger: #f87171;
+            --glass-bg: rgba(8, 13, 30, 0.84);
+            --glass-bg-light: rgba(255, 255, 255, 0.07);
+            --glass-border: rgba(255, 255, 255, 0.14);
+            --glass-blur: blur(20px);
+            --text-main: #f3f8ff;
+            --text-dim: #b8c7dc;
+            --text-faint: #6f829f;
+            --bg-deep: #060b19;
+            --bg-panel: rgba(8, 14, 30, 0.9);
+            --border: rgba(255, 255, 255, 0.14);
+            /* Legacy aliases for JS-generated HTML */
+            --primary-color: #58ccff;
+            --secondary-color: #b0bfd3;
+            --accent-color: #f87171;
+            --bg-dark: rgba(8, 13, 30, 0.92);
+            --border-color: rgba(255, 255, 255, 0.14);
+            --text-secondary: #b8c7dc;
+            --success-color: #34d399;
+            --warning-color: #fbbf24;
+            --danger-color: #f87171;
+        }
+
+        /* ── Reset ── */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        body {
+            font-family: 'Inter', 'Segoe UI', sans-serif;
+            height: 100vh;
+            overflow: hidden;
+            background: var(--bg-deep);
+            color: var(--text-main);
+        }
+
+        #map {
+            width: 100%;
+            height: 100vh;
+            z-index: 1;
+            background: #090d1a;
+        }
+
+        /* Tile artifact fix */
+        .leaflet-tile-container img {
+            -webkit-backface-visibility: hidden;
+            backface-visibility: hidden;
+            box-shadow: 0 0 1px rgba(0, 0, 0, 0.05);
+        }
+
+        .leaflet-tile {
+            outline: 1px solid transparent;
+        }
+
+        /* Vypnutie plynulého objavovania dlaždíc (zabraňuje preblikávaniu pri rolovaní) */
+        .no-fade-tile {
+            transition: none !important;
+        }
+
+        /* ── Scanlines (very subtle) ── */
+        .scanlines {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(to bottom,
+                    rgba(255, 255, 255, 0), rgba(255, 255, 255, 0) 50%,
+                    rgba(0, 0, 0, 0.06) 50%, rgba(0, 0, 0, 0.06));
+            background-size: 100% 4px;
+            pointer-events: none;
+            z-index: 2;
+            opacity: 0.18;
+        }
+
+        /* ── Map vignette ── */
+        #map::after {
+            content: '';
+            position: fixed;
+            inset: 0;
+            background: radial-gradient(ellipse at center, transparent 45%, rgba(0, 0, 0, 0.42) 100%);
+            pointer-events: none;
+            z-index: 3;
+        }
+
+        /* ═══════════════════════════════════════════════════════════════
+           LAYERS PANEL  (top-right)
+           ═══════════════════════════════════════════════════════════════ */
+        .layers-panel {
+            position: fixed;
+            top: 12px;
+            right: 12px;
+            left: auto;
+            transform: none;
+            width: auto;
+            max-width: calc(100vw - 370px);
+            /* Keep distance from left controls panel */
+            max-height: calc(100vh - 24px);
+            z-index: 1001;
+            background: var(--glass-bg);
+            backdrop-filter: var(--glass-blur);
+            -webkit-backdrop-filter: var(--glass-blur);
+            border: 1px solid var(--glass-border);
+            border-radius: 20px;
+            box-shadow: 0 8px 40px rgba(0, 0, 0, 0.45), 0 0 0 1px rgba(255, 255, 255, 0.04) inset;
+            display: flex;
+            flex-direction: column;
+            transition: box-shadow 0.2s;
+        }
+
+        .layers-panel:hover {
+            box-shadow: 0 12px 50px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(56, 189, 248, 0.1) inset;
+        }
+
+        .layers-panel-header {
+            padding: 10px 12px;
+            border-bottom: none;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-radius: 20px;
+        }
+
+        .layers-panel-header h3 {
+            margin: 0;
+            font-size: 12px;
+            font-weight: 700;
+            color: var(--text-main);
+            text-transform: uppercase;
+            letter-spacing: 1.2px;
+        }
+
+        .layers-panel-header h3 i {
+            margin-right: 7px;
+            color: var(--primary);
+        }
+
+        .layer-count {
+            font-size: 11px;
+            font-weight: 700;
+            color: var(--primary);
+            background: var(--primary-dim);
+            border: 1px solid var(--primary-border);
+            padding: 2px 9px;
+            border-radius: 20px;
+            letter-spacing: 0.3px;
+        }
+
+        .layers-list {
+            display: none;
+        }
+
+        .layer-bubble-bar {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: flex-end;
+            gap: 10px;
+            width: 100%;
+            margin-top: 2px;
+        }
+
+        .layer-bubble-slot {
+            position: relative;
+            min-width: 0;
+        }
+
+        .layer-bubble-trigger {
+            width: 100%;
+            border: 1px solid var(--border);
+            background: rgba(255, 255, 255, 0.07);
+            color: var(--text-main);
+            border-radius: 999px;
+            padding: 6px 10px;
+            font-size: 12px;
+            font-weight: 600;
+            display: inline-flex;
+            align-items: center;
+            gap: 7px;
+            cursor: pointer;
+            text-align: left;
+            white-space: nowrap;
+        }
+
+        .layer-bubble-trigger .layer-bubble-label {
+            flex: 1;
+            min-width: 0;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            padding-right: 2px;
+        }
+
+        .layer-bubble-count {
+            min-width: 18px;
+            height: 18px;
+            border-radius: 999px;
+            border: 1px solid var(--primary-border);
+            background: var(--primary-dim);
+            color: var(--primary);
+            font-size: 10px;
+            font-weight: 800;
+            padding: 0 5px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+        }
+
+        .layer-bubble-trigger:hover {
+            border-color: var(--primary-border);
+            background: var(--primary-dim);
+        }
+
+        .layer-bubble-trigger i:last-child {
+            margin-left: auto;
+            font-size: 10px;
+            opacity: 0.8;
+        }
+
+        .layer-bubble-menu {
+            display: none;
+            position: absolute;
+            top: calc(100% + 6px);
+            right: 0;
+            left: auto;
+            /* Dropdown aligns to right edge of bubble */
+            min-width: 260px;
+            max-width: min(400px, 85vw);
+            max-height: calc(100vh - 100px);
+            /* Responsive height fitting the screen */
+            overflow-y: auto;
+            z-index: 1200;
+            background: linear-gradient(180deg, rgba(10, 16, 34, 0.97), rgba(8, 12, 26, 0.97));
+            border: 1px solid rgba(56, 189, 248, 0.2);
+            border-radius: 12px;
+            padding: 8px;
+            box-shadow: 0 12px 30px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(56, 189, 248, 0.08) inset;
+            backdrop-filter: blur(12px);
+            transition: box-shadow 0.18s ease, border-color 0.18s ease, transform 0.14s ease;
+            transform-origin: top center;
+        }
+
+        .layer-bubble-slot.open .layer-bubble-menu {
+            display: block;
+            border-color: rgba(56, 189, 248, 0.34);
+            box-shadow: 0 14px 34px rgba(0, 0, 0, 0.52), 0 0 0 1px rgba(56, 189, 248, 0.12) inset, 0 0 18px rgba(56, 189, 248, 0.16);
+            transform: translateY(0);
+        }
+
+        .active-layer-controls-card:hover {
+            border-color: rgba(56, 189, 248, 0.3);
+            /* Zjemnený tieň pre aktívne vrstvy po vzore data vrstiev */
+            box-shadow: 0 0 12px rgba(56, 189, 248, 0.08);
+            transform: translateY(-1px);
+        }
+
+        .layer-bubble-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+            padding: 4px 5px;
+            border-radius: 8px;
+            border: 1px solid rgba(255, 255, 255, 0.11);
+            background: rgba(255, 255, 255, 0.045);
+            margin-bottom: 4px;
+            transition: border-color 0.14s ease, background 0.14s ease;
+        }
+
+        .layer-bubble-item:hover {
+            border-color: rgba(56, 189, 248, 0.22);
+            background: rgba(56, 189, 248, 0.08);
+        }
+
+        .layer-bubble-item:last-child {
+            margin-bottom: 0;
+        }
+
+        .layer-bubble-item-name {
+            color: var(--text-main);
+            font-size: 11px;
+            font-weight: 600;
+            line-height: 1.15;
+            padding-right: 6px;
+        }
+
+        .layer-bubble-toggle {
+            min-width: 38px;
+            height: 20px;
+            border-radius: 999px;
+            border: 1px solid rgba(148, 163, 184, 0.38);
+            background: linear-gradient(180deg, rgba(148, 163, 184, 0.22), rgba(100, 116, 139, 0.14));
+            color: #e2e8f0;
+            font-size: 10px;
+            font-weight: 800;
+            letter-spacing: 0.55px;
+            cursor: pointer;
+            transition: all 0.16s ease;
+            flex-shrink: 0;
+            box-shadow: 0 1px 6px rgba(15, 23, 42, 0.28), 0 0 0 1px rgba(255, 255, 255, 0.03) inset;
+        }
+
+        .layer-bubble-toggle.active {
+            border-color: rgba(56, 189, 248, 0.6);
+            background: linear-gradient(180deg, rgba(56, 189, 248, 0.34), rgba(56, 189, 248, 0.2));
+            color: #e0f2fe;
+            box-shadow: 0 2px 10px rgba(56, 189, 248, 0.3), 0 0 12px rgba(56, 189, 248, 0.22);
+        }
+
+        .layer-bubble-toggle:hover {
+            transform: translateY(-1px) scale(1.03);
+            filter: saturate(1.05);
+        }
+
+        /* ── Layer Group ── */
+        .layer-group {
+            margin-bottom: 10px;
+        }
+
+        .layer-group-header {
+            font-size: 10px;
+            font-weight: 700;
+            color: var(--text-dim);
+            text-transform: uppercase;
+            letter-spacing: 0.9px;
+            margin-bottom: 5px;
+            padding: 7px 6px;
+            border-left: 2px solid var(--primary-border);
+            cursor: pointer;
+            user-select: none;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            border-radius: 0 6px 6px 0;
+        }
+
+        .layer-group-header:hover {
+            background: var(--primary-dim);
+            border-left-color: var(--primary);
+            color: var(--text-main);
+        }
+
+        .collapse-icon {
+            font-size: 8px;
+            transition: transform 0.2s;
+            color: var(--primary);
+        }
+
+        .layer-group-content {
+            max-height: 2000px;
+            overflow: hidden;
+            transition: max-height 0.3s ease, opacity 0.3s ease;
+            opacity: 1;
+        }
+
+        .layer-group-content.collapsed {
+            max-height: 0;
+            opacity: 0;
+        }
+
+        /* ── Layer Item ── */
+        .layer-item {
+            margin-bottom: 6px;
+            background: var(--glass-bg-light);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 8px 10px;
+            transition: all 0.2s;
+        }
+
+        .layer-item:hover {
+            background: rgba(56, 189, 248, 0.06);
+            border-color: rgba(56, 189, 248, 0.15);
+        }
+
+        .layer-item.active {
+            border-color: var(--primary-border);
+            background: var(--primary-dim);
+            box-shadow: 0 0 12px rgba(56, 189, 248, 0.08);
+        }
+
+        .layer-checkbox-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            cursor: pointer;
+            padding: 1px 0;
+        }
+
+        .layer-checkbox-row input[type="checkbox"] {
+            width: 15px;
+            height: 15px;
+            cursor: pointer;
+            accent-color: var(--primary);
+            border-radius: 4px;
+        }
+
+        .layer-checkbox-label {
+            flex: 1;
+            font-size: 11px;
+            font-weight: 500;
+            color: var(--text-main);
+            cursor: pointer;
+            user-select: none;
+        }
+
+        .layer-info-btn {
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            border: 1px solid var(--border);
+            background: rgba(255, 255, 255, 0.05);
+            color: var(--text-dim);
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.15s;
+            font-size: 10px;
+            flex-shrink: 0;
+        }
+
+        .layer-info-btn:hover,
+        .layer-info-btn.active {
+            color: var(--primary);
+            border-color: var(--primary-border);
+            background: var(--primary-dim);
+        }
+
+        .layer-legend-panel {
+            margin-top: 7px;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            background: rgba(0, 0, 0, 0.22);
+            padding: 7px;
+        }
+
+        .layer-legend-title {
+            font-size: 9px;
+            font-weight: 700;
+            color: var(--text-dim);
+            text-transform: uppercase;
+            letter-spacing: 0.6px;
+            margin-bottom: 5px;
+        }
+
+        .layer-legend-content img {
+            max-width: 100%;
+            height: auto;
+            border-radius: 4px;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            background: rgba(255, 255, 255, 0.9);
+            /* Zosvetlené pozadie pre čitateľnosť textu legendy */
+        }
+
+        .layer-legend-empty {
+            font-size: 10px;
+            color: var(--text-dim);
+            line-height: 1.3;
+        }
+
+        .forecast-range-note {
+            margin-top: 5px;
+            font-size: 10px;
+            color: var(--text-dim);
+            letter-spacing: 0.2px;
+            line-height: 1.25;
+        }
+
+        .layer-checkbox-row input[type="checkbox"]:checked+.layer-checkbox-label {
+            color: var(--primary);
+            font-weight: 600;
+        }
+
+        /* ── Layer Controls (shown when active) ── */
+        .layer-controls {
+            display: none;
+            margin-top: 9px;
+            padding-top: 9px;
+            border-top: 1px solid var(--border);
+        }
+
+        .layer-item.active .layer-controls {
+            display: block;
+        }
+
+        .layer-control {
+            margin-bottom: 8px;
+        }
+
+        .layer-control:last-child {
+            margin-bottom: 0;
+        }
+
+        .layer-control-label {
+            display: block;
+            font-size: 9px;
+            font-weight: 600;
+            color: var(--text-dim);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 5px;
+        }
+
+        .layer-control-row {
+            display: flex;
+            align-items: center;
+            gap: 7px;
+        }
+
+        /* Small range input inside layer controls */
+        .layer-control input[type="range"] {
+            flex: 1;
+            height: 3px;
+            background: rgba(255, 255, 255, 0.08);
+            border-radius: 2px;
+            -webkit-appearance: none;
+            appearance: none;
+            outline: none;
+        }
+
+        .layer-control input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 13px;
+            height: 13px;
+            background: var(--primary);
+            border-radius: 50%;
+            cursor: pointer;
+            box-shadow: 0 0 6px var(--primary-glow);
+            transition: transform 0.15s;
+        }
+
+        .layer-control input[type="range"]::-webkit-slider-thumb:hover {
+            transform: scale(1.25);
+        }
+
+        .layer-control input[type="range"]::-webkit-slider-runnable-track {
+            height: 3px;
+            background: rgba(255, 255, 255, 0.08);
+            border-radius: 2px;
+        }
+
+        .layer-control input[type="datetime-local"] {
+            width: 100%;
+            background: rgba(8, 13, 30, 0.78);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 5px 8px;
+            color: var(--text-main);
+            font-size: 10px;
+            font-family: 'JetBrains Mono', monospace;
+            -webkit-appearance: none;
+            appearance: none;
+            transition: border-color 0.2s;
+        }
+
+        .layer-control input[type="datetime-local"]:focus {
+            outline: none;
+            border-color: var(--primary-border);
+            box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.1);
+        }
+
+        .layer-control-value {
+            font-size: 10px;
+            font-weight: 600;
+            font-family: 'JetBrains Mono', monospace;
+            color: var(--primary);
+            min-width: 30px;
+            text-align: right;
+        }
+
+        /* ═══════════════════════════════════════════════════════════════
+           BOTTOM CONTROL DOCK
+           ═══════════════════════════════════════════════════════════════ */
+        .ui-container {
+            position: fixed;
+            top: 12px;
+            left: 74px;
+            right: auto;
+            width: min(280px, calc(100vw - 32px));
+            z-index: 1000;
+            display: flex;
+            justify-content: flex-start;
+        }
+
+        .glass-panel {
+            position: relative;
+            background: var(--glass-bg);
+            backdrop-filter: var(--glass-blur);
+            -webkit-backdrop-filter: var(--glass-blur);
+            border: 1px solid var(--glass-border);
+            border-radius: 20px;
+            box-shadow: 0 10px 50px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.04) inset;
+            padding: 7px 14px 9px;
+            max-width: 280px;
+            width: 100%;
+            overflow: hidden;
+        }
+
+        /* Animated gradient border glow */
+        @keyframes border-flow {
+            0% {
+                background-position: 0% 50%;
+            }
+
+            50% {
+                background-position: 100% 50%;
+            }
+
+            100% {
+                background-position: 0% 50%;
+            }
+        }
+
+        .glass-panel::before {
+            content: '';
+            position: absolute;
+            top: -1px;
+            left: -1px;
+            right: -1px;
+            bottom: -1px;
+            border-radius: 21px;
+            background: linear-gradient(135deg, rgba(56, 189, 248, 0.55), rgba(129, 140, 248, 0.4), rgba(52, 211, 153, 0.4), rgba(56, 189, 248, 0.55));
+            background-size: 300% 300%;
+            animation: border-flow 6s ease infinite;
+            z-index: -1;
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+
+        .glass-panel:hover::before {
+            opacity: 1;
+        }
+
+        /* Bottom panel: disable bright glow on hover, use subtle shadow only */
+        #bottom-glass-panel:hover::before {
+            opacity: 0;
+        }
+
+        #bottom-glass-panel:hover {
+            box-shadow: 0 18px 64px rgba(0, 0, 0, 0.62), 0 0 0 1px rgba(56, 189, 248, 0.14) inset;
+        }
+
+        .controls-grid {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 8px;
+            align-items: start;
+            margin-bottom: 0;
+        }
+
+        .control-item {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .control-row-2 {
+            display: flex;
+            gap: 20px;
+            align-items: center;
+            padding-top: 14px;
+            border-top: 1px solid var(--border);
+        }
+
+        label {
+            display: block;
+            margin-bottom: 3px;
+            font-size: 9px;
+            font-weight: 700;
+            color: var(--text-dim);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        label i {
+            margin-right: 5px;
+            opacity: 0.75;
+        }
+
+        /* Selects & datetime-local (global) */
+        select,
+        input[type="datetime-local"] {
+            width: 100%;
+            background: rgba(8, 13, 30, 0.78);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 5px 10px;
+            color: var(--text-main);
+            font-size: 12px;
+            font-weight: 500;
+            transition: border-color 0.2s, box-shadow 0.2s;
+            appearance: none;
+            -webkit-appearance: none;
+            font-family: inherit;
+        }
+
+        select:hover,
+        input[type="datetime-local"]:hover {
+            border-color: rgba(56, 189, 248, 0.3);
+        }
+
+        select:focus,
+        input[type="datetime-local"]:focus {
+            outline: none;
+            border-color: var(--primary-border);
+            background: rgba(8, 13, 30, 0.9);
+            box-shadow: 0 0 0 3px rgba(88, 204, 255, 0.16);
+        }
+
+        option {
+            background: #0d1117;
+            color: white;
+            padding: 10px;
+        }
+
+        optgroup {
+            background: #161b22;
+            color: var(--primary);
+        }
+
+        /* Global range sliders */
+        input[type="range"] {
+            width: 100%;
+            height: 5px;
+            background: rgba(255, 255, 255, 0.08);
+            border-radius: 3px;
+            outline: none;
+            -webkit-appearance: none;
+        }
+
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 17px;
+            height: 17px;
+            background: var(--primary);
+            border-radius: 50%;
+            cursor: pointer;
+            box-shadow: 0 0 10px var(--primary-glow);
+            transition: transform 0.15s;
+            margin-top: -6px;
+        }
+
+        input[type="range"]::-webkit-slider-thumb:hover {
+            transform: scale(1.2);
+        }
+
+        input[type="range"]::-webkit-slider-runnable-track {
+            height: 5px;
+            background: rgba(255, 255, 255, 0.08);
+            border-radius: 3px;
+        }
+
+        .range-value {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 14px;
+            font-weight: 700;
+            color: #fff;
+            text-align: right;
+            margin-top: 1px;
+        }
+
+        /* ── Buttons ── */
+        .btn {
+            background: rgba(0, 0, 0, 0.3);
+            border: 1px solid var(--primary-border);
+            color: var(--primary);
+            padding: 9px 16px;
+            border-radius: 10px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            font-size: 12px;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            font-family: inherit;
+        }
+
+        .btn:hover {
+            background: var(--primary-dim);
+            color: #fff;
+            transform: translateY(-1px);
+            box-shadow: 0 4px 16px var(--primary-glow);
+            border-color: var(--primary);
+        }
+
+        .btn-sm {
+            padding: 6px 11px;
+            font-size: 11px;
+        }
+
+        .btn-stop {
+            border-color: rgba(248, 113, 113, 0.35);
+            color: var(--danger);
+            background: rgba(248, 113, 113, 0.08);
+        }
+
+        .btn-stop:hover {
+            background: rgba(248, 113, 113, 0.18);
+            color: #fff;
+            box-shadow: 0 0 20px rgba(248, 113, 113, 0.3);
+            border-color: var(--danger);
+        }
+
+        /* ── Info panel (bottom of dock) ── */
+        .info-panel {
+            margin-top: 8px;
+            padding-top: 8px;
+            border-top: 1px solid var(--border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .layer-title h3 {
+            font-size: 10px;
+            color: var(--text-dim);
+            margin: 0 0 3px 0;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.6px;
+        }
+
+        .layer-details {
+            font-size: 12px;
+            color: rgba(255, 255, 255, 0.85);
+            line-height: 1.4;
+        }
+
+        /* ── Scrollbar ── */
+        ::-webkit-scrollbar {
+            width: 4px;
+            height: 4px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.12);
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: var(--primary);
+        }
+
+        /* ── Leaflet overrides ── */
+        .leaflet-control-attribution {
+            background: rgba(8, 13, 30, 0.72) !important;
+            backdrop-filter: blur(8px) !important;
+            color: rgba(232, 241, 255, 0.58) !important;
+            font-family: 'Inter', sans-serif !important;
+            font-size: 10px !important;
+            border-radius: 6px !important;
+            border: none !important;
+        }
+
+        .leaflet-control-attribution a {
+            color: var(--primary) !important;
+        }
+
+        .leaflet-control-zoom a {
+            background: var(--glass-bg) !important;
+            backdrop-filter: var(--glass-blur) !important;
+            -webkit-backdrop-filter: var(--glass-blur) !important;
+            border: 1px solid var(--glass-border) !important;
+            color: var(--text-main) !important;
+            transition: all 0.2s !important;
+        }
+
+        .leaflet-control-zoom a:hover {
+            background: var(--primary-dim) !important;
+            color: var(--primary) !important;
+        }
+
+        .leaflet-control-zoom {
+            border: none !important;
+            border-radius: 12px !important;
+            overflow: hidden;
+        }
+
+        .leaflet-bar {
+            border: none !important;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4) !important;
+        }
+
+        /* ── GetFeatureInfo Popup ── */
+        .leaflet-popup-content-wrapper {
+            background: var(--glass-bg) !important;
+            backdrop-filter: var(--glass-blur) !important;
+            -webkit-backdrop-filter: var(--glass-blur) !important;
+            border: 1px solid var(--glass-border) !important;
+            border-radius: 16px !important;
+            box-shadow: 0 8px 40px rgba(0, 0, 0, 0.5) !important;
+        }
+
+        .leaflet-popup-content {
+            margin: 14px 16px !important;
+            font-family: 'Inter', 'Segoe UI', sans-serif;
+            color: var(--text-main) !important;
+            line-height: 1.5;
+        }
+
+        .leaflet-popup-tip {
+            background: var(--glass-bg) !important;
+        }
+
+        .leaflet-popup-close-button {
+            color: var(--text-dim) !important;
+            font-size: 20px !important;
+            padding: 4px 8px !important;
+        }
+
+        .leaflet-popup-close-button:hover {
+            color: var(--primary) !important;
+        }
+
+        .leaflet-popup-content::-webkit-scrollbar {
+            width: 4px;
+        }
+
+        .leaflet-popup-content::-webkit-scrollbar-thumb {
+            background: var(--primary);
+            border-radius: 3px;
+        }
+
+        /* ── No-data banner ── */
+        .no-data-banner {
+            position: fixed;
+            top: 72px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 1500;
+            background: rgba(10, 15, 30, 0.88);
+            backdrop-filter: blur(14px);
+            -webkit-backdrop-filter: blur(14px);
+            border: 1px solid rgba(251, 191, 36, 0.4);
+            border-radius: 14px;
+            padding: 12px 24px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            box-shadow: 0 8px 30px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(251, 191, 36, 0.1) inset;
+            animation: slideDown 0.3s ease;
+            pointer-events: none;
+        }
+
+        @keyframes slideDown {
+            from {
+                transform: translateX(-50%) translateY(-16px);
+                opacity: 0;
+            }
+
+            to {
+                transform: translateX(-50%) translateY(0);
+                opacity: 1;
+            }
+        }
+
+        .no-data-banner i {
+            color: var(--warning);
+            font-size: 16px;
+            animation: pulseFade 2s ease-in-out infinite;
+        }
+
+        @keyframes pulseFade {
+
+            0%,
+            100% {
+                opacity: 1;
+            }
+
+            50% {
+                opacity: 0.5;
+            }
+        }
+
+        .no-data-banner span {
+            color: var(--text-main);
+            font-size: 12px;
+            font-weight: 600;
+            letter-spacing: 0.2px;
+        }
+
+        /* ── Active-layers badge container (bottom dock) ── */
+        #active-layers-panel {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 8px;
+            margin-top: 4px;
+            padding: 1px 0;
+            min-height: 0;
+        }
+
+        .active-layer-controls-card {
+            border: 1px solid rgba(56, 189, 248, 0.22);
+            border-radius: 12px;
+            background: linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.025));
+            padding: 12px;
+            box-shadow: 0 4px 14px rgba(0, 0, 0, 0.24), 0 0 0 1px rgba(56, 189, 248, 0.06) inset;
+        }
+
+        .active-layer-controls-card.dragging {
+            opacity: 0.5;
+            border-color: var(--primary-border);
+        }
+
+        .active-layer-controls-header {
+            display: flex;
+            align-items: center;
+            gap: 7px;
+            font-size: 14px;
+            font-weight: 700;
+            color: var(--primary);
+            margin-bottom: 9px;
+            padding-bottom: 8px;
+            border-bottom: 1px solid rgba(56, 189, 248, 0.2);
+            cursor: move;
+        }
+
+        .active-layer-controls-header .active-layer-info-btn {
+            margin-left: auto;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            border: 1px solid var(--border);
+            background: rgba(255, 255, 255, 0.05);
+            color: var(--text-dim);
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.15s;
+            font-size: 11px;
+        }
+
+        .active-layer-controls-header .active-layer-visibility-btn {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            border: 1px solid var(--border);
+            background: rgba(255, 255, 255, 0.05);
+            color: var(--text-dim);
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.15s;
+            font-size: 11px;
+        }
+
+        .active-layer-controls-header .active-layer-info-btn:hover,
+        .active-layer-controls-header .active-layer-info-btn.active,
+        .active-layer-controls-header .active-layer-visibility-btn:hover,
+        .active-layer-controls-header .active-layer-visibility-btn.active {
+            color: var(--primary);
+            border-color: var(--primary-border);
+            background: var(--primary-dim);
+        }
+
+        .active-layer-controls-body .layer-controls {
+            display: block !important;
+            margin-top: 0;
+            padding-top: 0;
+            border-top: none;
+        }
+
+        /* Slight readability boost for controls rendered inside active layer cards */
+        #active-layers-panel .layer-control-label {
+            font-size: 12px;
+            margin-bottom: 7px;
+        }
+
+        #active-layers-panel .layer-control-value {
+            font-size: 13px;
+            min-width: 38px;
+        }
+
+        #active-layers-panel .layer-control input[type="range"] {
+            height: 5px;
+        }
+
+        #active-layers-panel .layer-control-row {
+            gap: 9px;
+        }
+
+        /* Text-only readability boost */
+        #bottom-glass-panel label {
+            font-size: 10px;
+        }
+
+        #bottom-glass-panel select,
+        #bottom-glass-panel input[type="date"],
+        #bottom-glass-panel input[type="datetime-local"] {
+            font-size: 12px;
+        }
+
+        #bottom-glass-panel .layer-bubble-trigger {
+            font-size: 12px;
+        }
+
+        .active-layer-empty {
+            font-size: 11px;
+            color: rgba(255, 255, 255, 0.45);
+            font-style: italic;
+        }
+
+        /* ── Elevation date label (video layers) ── */
+        [id^="elevation-date-"] {
+            font-family: 'JetBrains Mono', monospace !important;
+            font-size: 11px !important;
+            color: var(--primary) !important;
+            background: var(--primary-dim) !important;
+            border: 1px solid var(--primary-border) !important;
+            border-radius: 8px !important;
+            padding: 5px 10px !important;
+            text-align: center;
+        }
+
+        /* ── Drag handle bar ── */
+        #bottom-panel-drag-handle>div {
+            background: rgba(255, 255, 255, 0.15) !important;
+            border-radius: 3px !important;
+        }
+
+        /* ── Minimize button style ── */
+        #minimize-layers-panel,
+        #minimize-bottom-panel {
+            color: var(--text-dim) !important;
+            transition: color 0.2s;
+        }
+
+        #minimize-layers-panel:hover,
+        #minimize-bottom-panel:hover {
+            color: var(--primary) !important;
+        }
+
+        /* ── Restore buttons ── */
+        #restore-layers-panel,
+        #restore-bottom-panel {
+            background: var(--glass-bg) !important;
+            backdrop-filter: var(--glass-blur) !important;
+            -webkit-backdrop-filter: var(--glass-blur) !important;
+            border: 1px solid var(--glass-border) !important;
+            color: var(--primary) !important;
+            transition: all 0.2s !important;
+        }
+
+        #restore-layers-panel:hover,
+        #restore-bottom-panel:hover {
+            background: var(--primary-dim) !important;
+            box-shadow: 0 0 14px var(--primary-glow) !important;
+        }
+
+        /* ── Responsive ── */
+        @media (max-width: 1400px) {
+            .controls-grid {
+                grid-template-columns: 1fr;
+                gap: 8px;
+            }
+        }
+
+        @media (max-width: 1024px) {
+            .control-item {
+                min-width: 150px;
+            }
+
+            .layers-panel {
+                max-width: calc(100vw - 320px);
+            }
+        }
+    </style>
+
+</head>
+
+<body>
+    <div class="scanlines"></div>
+
+    <div id="map"></div>
+
+    <!-- No Data Available Banner (subtle, non-blocking) -->
+    <div id="no-data-overlay" class="no-data-banner" style="display: none;">
+        <i class="fa-solid fa-triangle-exclamation"></i>
+        <span>No data available for this time period</span>
+    </div>
+
+    <!-- Loading Banner (same position as no-data) -->
+    <div id="loading-overlay" class="loading-banner" style="display: none;">
+        <div class="spinner"></div>
+        <span>Loading layer data...</span>
+    </div>
+
+    <style>
+        /* Loading Banner */
+        .loading-banner {
+            position: fixed;
+            top: 72px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 1500;
+            background: rgba(10, 15, 30, 0.88);
+            backdrop-filter: blur(14px);
+            -webkit-backdrop-filter: blur(14px);
+            border: 1px solid var(--primary-border);
+            border-radius: 14px;
+            padding: 12px 24px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            box-shadow: 0 8px 30px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(56, 189, 248, 0.08) inset;
+            animation: slideDown 0.3s ease;
+            pointer-events: none;
+        }
+
+        .spinner {
+            width: 16px;
+            height: 16px;
+            border: 2px solid rgba(255, 255, 255, 0.15);
+            border-radius: 50%;
+            border-top-color: var(--primary);
+            animation: spin 0.8s linear infinite;
+        }
+
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+
+        .loading-banner span {
+            color: var(--text-main);
+            font-size: 12px;
+            font-weight: 600;
+            letter-spacing: 0.2px;
+        }
+    </style>
+
+
+    <!-- Top-Right Layer Management Panel -->
+    <div class="layers-panel">
+        <div class="layers-panel-header" id="layers-panel-drag-handle" style="cursor: grab;">
+            <div style="display:flex; align-items:center; gap:10px; width:100%;">
+                <h3 style="pointer-events: none; white-space: nowrap;"><i class="fa-solid fa-layer-group"></i> Data
+                    Layers</h3>
+                <span id="layer-count" class="layer-count">0/3</span>
+                <div id="layer-bubble-bar" class="layer-bubble-bar"></div>
+                <button id="minimize-layers-panel"
+                    style="background: none; border: none; color: var(--text-secondary); cursor: pointer; font-size: 14px; padding: 0 4px; margin-left: 4px;"
+                    title="Minimize Panel">
+                    <i class="fa-solid fa-minus"></i>
+                </button>
+            </div>
+        </div>
+        <div id="layers-list" class="layers-list">
+            <!-- Layers will be dynamically populated with checkboxes and controls -->
+        </div>
+    </div>
+
+    <!-- Main UI Dock -->
+    <div class="ui-container">
+        <div class="glass-panel" id="bottom-glass-panel">
+            <!-- Drag Handle for bottom panel -->
+            <div id="bottom-panel-drag-handle"
+                style="width: 100%; height: 18px; cursor: grab; display: flex; justify-content: center; align-items: center; position: relative; margin-bottom: 4px;">
+                <div style="width: 40px; height: 4px; background: rgba(255,255,255,0.2); border-radius: 2px;"></div>
+                <button id="minimize-bottom-panel"
+                    style="position: absolute; right: 0; top: 0; background: none; border: none; color: var(--text-secondary); cursor: pointer; font-size: 14px;"
+                    title="Minimize Panel">
+                    <i class="fa-solid fa-minus"></i>
+                </button>
+            </div>
+            <div class="controls-grid" id="bottom-controls-grid">
+
+                <!-- Layer Selection - MOVED TO TOP RIGHT PANEL -->
+                <div class="control-item" style="display: none;">
+                    <label for="layer-select"><i class="fa-solid fa-layer-group"></i> Data Layer</label>
+                    <select id="layer-select">
+                        <optgroup label="Static Probability Layers">
+                            <option value="probability_epis10y_1_15">Probability Epis 10y (1-15)</option>
+                            <option value="probability_epis10y_1_3">Probability Epis 10y (1-3)</option>
+                            <option value="probability_epis10y_4_15">Probability Epis 10y (4-15)</option>
+                            <option value="probability_epis100y_1_15">Probability Epis 100y (1-15)</option>
+                            <option value="probability_epis100y_1_3">Probability Epis 100y (1-3)</option>
+                            <option value="probability_epis100y_4_15">Probability Epis 100y (4-15)</option>
+                            <option value="probability_epis500y_1_15">Probability Epis 500y (1-15)</option>
+                            <option value="probability_epis500y_1_3">Probability Epis 500y (1-3)</option>
+                            <option value="probability_epis500y_4_15">Probability Epis 500y (4-15)</option>
+                            <option value="probability_twl10y_1_15">Probability TWL 10y (1-15)</option>
+                            <option value="probability_twl10y_1_3">Probability TWL 10y (1-3)</option>
+                            <option value="probability_twl10y_4_15">Probability TWL 10y (4-15)</option>
+                            <option value="probability_twl100y_1_15">Probability TWL 100y (1-15)</option>
+                            <option value="probability_twl100y_1_3">Probability TWL 100y (1-3)</option>
+                            <option value="probability_twl100y_4_15">Probability TWL 100y (4-15)</option>
+                            <option value="probability_twl500y_1_15">Probability TWL 500y (1-15)</option>
+                            <option value="probability_twl500y_1_3">Probability TWL 500y (1-3)</option>
+                            <option value="probability_twl500y_4_15">Probability TWL 500y (4-15)</option>
+                        </optgroup>
+                        <optgroup label="Coastal Point Layers">
+                            <option value="probability_epis_coast_01_15">Coastal Epis (0.1-1.5)</option>
+                            <option value="probability_epis_coast_01_03">Coastal Epis (0.1-0.3)</option>
+                            <option value="probability_epis_coast_04_15">Coastal Epis (0.4-1.5)</option>
+                            <option value="probability_twl_coast_01_15">Coastal TWL (0.1-1.5)</option>
+                            <option value="probability_twl_coast_01_03">Coastal TWL (0.1-0.3)</option>
+                            <option value="probability_twl_coast_04_15">Coastal TWL (0.4-1.5)</option>
+                        </optgroup>
+                        <optgroup label="Video Layers">
+                            <option value="epis_wl75">Episode WL 75</option>
+
+                            <option value="twl75">Total WL 75</option>
+                        </optgroup>
+                    </select>
+                </div>
+
+                <!-- Time Dimension -->
+                <div class="control-item">
+                    <label for="time-select">
+                        <i class="fa-regular fa-clock"></i> Time Window (UTC)
+                    </label>
+                    <div style="display: flex; gap: 8px; width: 100%;">
+                        <input type="date" id="date-select"
+                            style="flex: 1; padding: 5px; border: 1px solid rgba(255,255,255,0.2); border-radius: 4px; background: rgba(0,0,0,0.3); color: white;">
+                        <select id="hour-select"
+                            style="width: 76px; padding: 5px; border: 1px solid rgba(255,255,255,0.2); border-radius: 4px; background: rgba(0,0,0,0.3); color: white;">
+                            <option value="00">00:00</option>
+                            <option value="12">12:00</option>
+                        </select>
+                    </div>
+                    <!-- Hidden proxy input to maintain backwards compatibility with app.js listeners -->
+                    <input type="hidden" id="time-select">
+                    <div style="margin-top: 6px;">
+                        <label for="basemap-select"><i class="fa-solid fa-map"></i> Background Map</label>
+                        <select id="basemap-select">
+                            <option value="esri_world_street">Esri World Street (EN)</option>
+                            <option value="carto_dark">Carto Dark Matter</option>
+                            <option value="osm">OpenStreetMap</option>
+                            <option value="carto_voyager">Carto Voyager</option>
+                            <option value="esri_satellite">Esri Satellite</option>
+                        </select>
+                    </div>
+
+                </div>
+
+                <!-- Active Layers in Bottom Panel -->
+                <div id="active-layers-panel">
+                    <!-- Dynamically populated by multi-layer.js -->
+                </div>
+
+            </div>
+        </div>
+
+        <!-- Leaflet JS -->
+        <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+        <script src="wms-metadata.js?v=18"></script>
+        <script src="app.js?v=18"></script>
+        <script src="multi-layer.js?v=18"></script>
+        <script src="ui-interactions.js?v=18"></script>
+
+        <!-- Restore buttons (hidden by default) -->
+        <button id="restore-layers-panel"
+            style="display: none; position: fixed; top: 20px; right: 20px; z-index: 1001; background: var(--bg-panel); border: 1px solid var(--border-color); color: var(--primary-color); border-radius: 50%; width: 44px; height: 44px; box-shadow: 0 4px 12px rgba(0,0,0,0.3); cursor: pointer; align-items: center; justify-content: center;"
+            title="Restore Data Layers">
+            <i class="fa-solid fa-layer-group"></i>
+        </button>
+
+        <button id="restore-bottom-panel"
+            style="display: none; position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); z-index: 1001; background: var(--bg-panel); border: 1px solid var(--border-color); color: var(--primary-color); border-radius: 22px; padding: 0 20px; height: 44px; box-shadow: 0 4px 12px rgba(0,0,0,0.3); cursor: pointer; align-items: center; justify-content: center; gap: 8px; font-weight: 600;"
+            title="Restore Controls">
+            <i class="fa-solid fa-sliders"></i> Controls
+        </button>
+
+</body>
+
+</html>

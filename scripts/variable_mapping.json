@@ -1,0 +1,147 @@
+{
+    "__comment__": "Format: 'FixedNameInGeoServer': ['PossibleName1InNetCDF', 'PossibleName2InNetCDF']",
+    "probability_epis10y_1_1": [
+        "probabilityEpis10y_1",
+        "probabilityEpis_01_01-10"
+    ],
+    "probability_epis10y_1_3": [
+        "probabilityEpis10y_1_3",
+        "probabilityEpis_01_03-10"
+    ],
+    "probability_epis10y_1_15": [
+        "probabilityEpis10y_1_15",
+        "probabilityEpis_01_15-10"
+    ],
+    "probability_epis10y_4_15": [
+        "probabilityEpis10y_4_15",
+        "probabilityEpis_04_15-10"
+    ],
+    "probability_epis10y_10_15": [
+        "probabilityEpis10y_10_15",
+        "probabilityEpis_10_15-10"
+    ],
+    "probability_epis100y_1_1": [
+        "probabilityEpis100y_1",
+        "probabilityEpis_01_01-100"
+    ],
+    "probability_epis100y_1_3": [
+        "probabilityEpis100y_1_3",
+        "probabilityEpis_01_03-100"
+    ],
+    "probability_epis100y_1_15": [
+        "probabilityEpis100y_1_15",
+        "probabilityEpis_01_15-100"
+    ],
+    "probability_epis100y_4_15": [
+        "probabilityEpis100y_4_15",
+        "probabilityEpis_04_15-100"
+    ],
+    "probability_epis100y_10_15": [
+        "probabilityEpis100y_10_15",
+        "probabilityEpis_10_15-100"
+    ],
+    "probability_epis500y_1_1": [
+        "probabilityEpis500y_1",
+        "probabilityEpis_01_01-500"
+    ],
+    "probability_epis500y_1_3": [
+        "probabilityEpis500y_1_3",
+        "probabilityEpis_01_03-500"
+    ],
+    "probability_epis500y_1_15": [
+        "probabilityEpis500y_1_15",
+        "probabilityEpis_01_15-500"
+    ],
+    "probability_epis500y_4_15": [
+        "probabilityEpis500y_4_15",
+        "probabilityEpis_04_15-500"
+    ],
+    "probability_epis500y_10_15": [
+        "probabilityEpis500y_10_15",
+        "probabilityEpis_10_15-500"
+    ],
+    "probability_twl10y_1_1": [
+        "probabilityTWL10y_1",
+        "probabilityTWL_01_01-10"
+    ],
+    "probability_twl10y_1_3": [
+        "probabilityTWL10y_1_3",
+        "probabilityTWL_01_03-10"
+    ],
+    "probability_twl10y_1_15": [
+        "probabilityTWL10y_1_15",
+        "probabilityTWL_01_15-10"
+    ],
+    "probability_twl10y_4_15": [
+        "probabilityTWL10y_4_15",
+        "probabilityTWL_04_15-10"
+    ],
+    "probability_twl10y_10_15": [
+        "probabilityTWL10y_10_15",
+        "probabilityTWL_10_15-10"
+    ],
+    "probability_twl100y_1_1": [
+        "probabilityTWL100y_1",
+        "probabilityTWL_01_01-100"
+    ],
+    "probability_twl100y_1_3": [
+        "probabilityTWL100y_1_3",
+        "probabilityTWL_01_03-100"
+    ],
+    "probability_twl100y_1_15": [
+        "probabilityTWL100y_1_15",
+        "probabilityTWL_01_15-100"
+    ],
+    "probability_twl100y_4_15": [
+        "probabilityTWL100y_4_15",
+        "probabilityTWL_04_15-100"
+    ],
+    "probability_twl100y_10_15": [
+        "probabilityTWL100y_10_15",
+        "probabilityTWL_10_15-100"
+    ],
+    "probability_twl500y_1_1": [
+        "probabilityTWL500y_1",
+        "probabilityTWL_01_01-500"
+    ],
+    "probability_twl500y_1_3": [
+        "probabilityTWL500y_1_3",
+        "probabilityTWL_01_03-500"
+    ],
+    "probability_twl500y_1_15": [
+        "probabilityTWL500y_1_15",
+        "probabilityTWL_01_15-500"
+    ],
+    "probability_twl500y_4_15": [
+        "probabilityTWL500y_4_15",
+        "probabilityTWL_04_15-500"
+    ],
+    "probability_twl500y_10_15": [
+        "probabilityTWL500y_10_15",
+        "probabilityTWL_10_15-500"
+    ],
+    "epis_wl75": [
+        "episWL75"
+    ],
+    "twl75": [
+        "TWL75"
+    ],
+    "probability_epis_coast_01_15": [
+        "probabilityEpiscoast_01_15"
+    ],
+    "probability_epis_coast_01_03": [
+        "probabilityEpiscoast_01_03"
+    ],
+    "probability_epis_coast_04_15": [
+        "probabilityEpiscoast_04_15"
+    ],
+    "probability_twl_coast_01_15": [
+        "probabilityTWLcoast_01_15"
+    ],
+    "probability_twl_coast_01_03": [
+        "probabilityTWLcoast_01_03"
+    ],
+    "probability_twl_coast_04_15": [
+        "probabilityTWLcoast_04_15"
+    ]
+}

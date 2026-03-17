@@ -1,0 +1,8 @@
+
+0 8 * * * cd /opt/geoserver/scripts && bash run_wms_with_email.sh /opt/geoserver/logs/wms_8am.log "8am" >> /opt/geoserver/logs/cron.log 2>&1
+0 13 * * * cd /opt/geoserver/scripts && bash run_wms_with_email.sh /opt/geoserver/logs/wms_2pm.log "2pm" >> /opt/geoserver/logs/cron.log 2>&1
+0 20 * * * cd /opt/geoserver/scripts && bash run_wms_with_email.sh /opt/geoserver/logs/wms_8pm.log "8pm" >> /opt/geoserver/logs/cron.log 2>&1
+
+0 9 * * * cd /opt/geoserver/scripts && bash monitor_storage.sh >> /opt/geoserver/logs/storage_monitor.log 2>&1
+
+

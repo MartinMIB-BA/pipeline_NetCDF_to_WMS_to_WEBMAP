@@ -1,0 +1,83 @@
+services:
+  postgis:
+    image: postgis/postgis:16-3.4
+    container_name: postgis
+    environment:
+      POSTGRES_DB: gis
+      POSTGRES_USER: gisadmin
+      POSTGRES_PASSWORD: geoserver
+    volumes:
+      - /opt/geoserver/data/postgis_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    restart: unless-stopped
+    command: >
+      postgres
+      -c max_connections=200
+      -c shared_buffers=8GB
+      -c effective_cache_size=24GB
+      -c work_mem=256MB
+      -c maintenance_work_mem=2GB
+      -c random_page_cost=1.1
+
+  geoserver:
+    image: docker.osgeo.org/geoserver:2.27.x
+    container_name: geoserver
+    # IMPORTANT: ensure files created in mounted volumes are group-writable (geodata GID=1001)
+    user: "1001:1001"
+    environment:
+      GEOSERVER_DATA_DIR: /opt/geoserver/data_dir
+      CATALINA_OPTS: "-Xms12G -Xmx24G -XX:+UseG1GC -XX:MaxGCPauseMillis=200 -XX:ParallelGCThreads=8 -XX:ConcGCThreads=4" #For better usage 64GB RAM on server
+    volumes:
+      - /opt/geoserver/data/geoserver_data:/opt/geoserver/data_dir
+      - /opt/geoserver/data/uploads:/opt/geoserver/uploads
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8080/geoserver/web/ || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 10
+      start_period: 60s
+    restart: unless-stopped
+    depends_on:
+      - postgis
+    
+  web:
+    image: nginx:alpine
+    container_name: web
+    depends_on:
+      - geoserver
+    ports:
+      - "80:80"
+    volumes:
+      - /opt/geoserver/web:/usr/share/nginx/html:ro
+      - /opt/geoserver/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+      - /opt/geoserver/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - /opt/geoserver/monitoring/nginx_logs:/var/log/nginx
+    restart: unless-stopped
+    
+  pgbouncer:
+    image: edoburu/pgbouncer:latest
+    container_name: pgbouncer
+    depends_on:
+      - postgis
+    environment:
+      AUTH_USER: gisadmin
+      ADMIN_USERS: gisadmin
+      STATS_USERS: gisadmin
+      DB_HOST: postgis
+      DB_PORT: 5432
+      DB_USER: gisadmin
+      DB_PASSWORD: geoserver
+      DB_NAME: gis
+      AUTH_TYPE: plain
+      POOL_MODE: transaction
+      MAX_CLIENT_CONN: 500
+      DEFAULT_POOL_SIZE: 100
+      MIN_POOL_SIZE: 10
+      RESERVE_POOL_SIZE: 20
+      SERVER_IDLE_TIMEOUT: 60
+    ports:
+      - "6432:5432"
+    restart: unless-stopped

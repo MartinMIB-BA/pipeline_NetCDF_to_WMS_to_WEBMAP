@@ -1,0 +1,48 @@
+# MacOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtuálne prostredia a tajné súbory
+venv/
+.venv/
+env/
+.env
+
+# Jupyter Notebook
+.ipynb_checkpoints/
+
+# Node / JS (ak by si niekedy pridával NPM do leaflet vieweru)
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Ak máš adresáre s veľkými dátami, napríklad NetCDF súbory, ktoré nechceš nahrávať na Git, 
+# môžeš ich odkomentovať nižšie:
+# NC/
+# *.nc
+# *.xlsx
