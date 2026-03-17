@@ -1,388 +1,308 @@
-# WMS NetCDF Data Processing Pipeline - Documentation
+# Pipeline — scripts/
 
-## System Overview
-
-This system automatically downloads, processes, and publishes NetCDF sea level data through GeoServer as WMS (Web Map Service) services. The system features:
-
-- ✅ **Automatic file discovery** - intelligently scans for available NetCDF files based on the current year and month.
-- ✅ **PostgreSQL tracking** - Prevents reprocessing of already completed files using a database log.
-- ✅ **Data retention management** - Automatically deletes temporary GeoTIFF files to save disk space.
-- ✅ **TIME dimensions** - Supports time series with optimized GetCapabilities.
-- ✅ **Three WMS layer types** - Static, video, and point data.
-- ✅ **Stream Processing** - Downloads and processes one file at a time, keeping disk usage minimal.
+This directory contains the Python data pipeline that automatically processes NetCDF sea-level forecast files from JRC-FLOODS into GeoServer WMS layers.
 
 ---
 
-## Project Structure
+## How It Works
+
+```
+1. Auto-discover new NetCDF files on JRC-FLOODS FTP
+2. Skip files already marked as 'success' in PostgreSQL
+3. Download one file at a time (stream mode)
+4. Route file to the correct worker based on filename pattern
+5. Worker converts NetCDF variables → GeoTIFFs
+6. GeoTIFFs are uploaded to GeoServer as ImageMosaic layers
+7. Update tracking DB with result (success / failed)
+8. Optionally delete working directory (AUTO_CLEANUP)
+9. Send email notification with log attachment
+```
+
+Processing is **incremental**: the tracking database ensures each file is only processed once unless explicitly reset.
+
+---
+
+## Directory Structure
 
 ```
 scripts/
-├── run_all_wms.py              # Main orchestrator (STREAM MODE)
 ├── lib/
-│   ├── config.py               # Configuration and environment variables
-│   ├── download.py             # Downloading and auto-discovery logic
-│   ├── geoserver.py            # GeoServer REST API integration
-│   ├── postgis.py              # PostGIS schema management
-│   ├── tracking.py             # PostgreSQL file tracking system
-│   └── netcdf_utils.py         # NetCDF utility functions
+│   ├── config.py           Environment variable loading & defaults
+│   ├── download.py         Remote file discovery & HTTP/FTP downloading
+│   ├── geoserver.py        GeoServer REST API client
+│   ├── postgis.py          PostGIS schema creation for ImageMosaic
+│   ├── tracking.py         PostgreSQL tracking of processed files
+│   └── netcdf_utils.py     NetCDF variable inspection & GeoTIFF export
 ├── workers/
-│   ├── static_wms.py           # Static probability layers processing
-│   ├── video_wms.py            # Video time-series layers processing
-│   └── points_wms.py           # Coastal point data processing
-├── monitoring/
-│   └── monitor_storage.sh      # Disk capacity monitoring script
-├── .env                        # Environment variables (Credentials)
-└── requirements.txt            # Python dependencies
+│   ├── static_wms.py       Processor for static probability layers
+│   ├── video_wms.py        Processor for time-series video layers
+│   └── points_wms.py       Processor for coastal point data layers
+├── run_all_wms.py          Main orchestrator
+├── run_wms_with_email.sh   Cron wrapper with email notification
+├── send_email_notification.py  Gmail SMTP sender
+├── seed.py                 One-time database seeding utility
+├── export_tracking.py      Export tracking log to CSV
+├── debug_auth.py           GeoServer authentication debugger
+├── monitor_storage.sh      Disk space monitoring script
+├── variable_mapping.json   NetCDF variable name → GeoServer layer name map
+├── wms_crontab.txt         Cron job definitions
+└── requirements.txt        Python dependencies
 ```
 
 ---
 
-## Installation & Setup
+## Entry Point: `run_all_wms.py`
 
-### 1. System Requirements
-
-- Python 3.12+
-- PostgreSQL 12+ with PostGIS extension
-- GeoServer 2.27+
-- ~20GB free disk space 
-
-### 2. Install Dependencies
-
-Using `conda` (Recommended):
+The main orchestrator. Runs the full discovery → download → process → publish cycle.
 
 ```bash
-cd scripts
-conda create -n wms python=3.12
-conda activate wms
-pip install -r requirements.txt
+python run_all_wms.py [OPTIONS]
 ```
 
-**Main dependencies:**
-- xarray >= 2023.1.0
-- rioxarray >= 0.15.0
-- netCDF4 >= 1.6.0
-- numpy >= 1.24.0
-- psycopg2-binary >= 2.9.0
-- requests >= 2.31.0
-- rasterio >= 1.3.0
+| Option | Description |
+|--------|-------------|
+| `--use-url` | Discover and download files from `BASE_URL` (default mode) |
+| `--force-reprocess` | Ignore tracking DB and reprocess all files |
+| `--reset-file FILENAME` | Reset one specific file back to pending |
+| `--stats` | Print processing statistics and exit |
+| `--workers WORKERS` | Comma-separated list of workers to run (default: `static,video,points`) |
+| `--reset-each-store` | Clear GeoServer ImageMosaic stores before each upload |
+| `--no-reharvest` | Skip the reharvest step after upload |
+| `--no-cleanup` | Keep working directory after processing |
+| `--no-tracking` | Disable PostgreSQL tracking entirely |
 
-### 3. PostgreSQL Configuration
-
-Create the tracking database:
-```sql
-CREATE DATABASE postgres;
-CREATE USER geoserver WITH PASSWORD 'geoserver';
-GRANT ALL PRIVILEGES ON DATABASE postgres TO geoserver;
-
-\c postgres
-CREATE EXTENSION postgis;
-```
-
-### 4. GeoServer Configuration
-
-- Install GeoServer
-- Create workspace `E_and_T`
-- Configure PostGIS datastore for ImageMosaic
-
----
-
-## Configuration
-
-### Environment Variables
-
-Create a `.env` file in the `scripts/` directory:
+**Examples:**
 
 ```bash
-# GeoServer
-GEOSERVER_URL=http://89.47.190.36:8080/geoserver
-WORKSPACE=E_and_T
-GEOSERVER_USER=admin
-GEOSERVER_PASSWORD=your_secure_password
-
-# PostgreSQL
-PG_HOST_LOCAL=127.0.0.1
-PG_PORT=5432
-PG_DB=postgres
-PG_USER=geoserver
-PG_PASS=your_secure_password
-PG_HOST_GEOSERVER=pgbouncer  # Hostname from GeoServer's perspective inside Docker
-
-# Paths
-INPUT_DIR=/opt/geoserver/example_nc
-OUTPUT_ROOT=/opt/geoserver/uploads
-GEOSERVER_DATA_DIR=/opt/geoserver/data_dir
-
-# URL download (auto-discovery)
-BASE_URL=https://jeodpp.jrc.ec.europa.eu/ftp/jrc-opendata/FLOODS/sea_level_forecasts/probabilistic_data_driven/medium_term_forecasts/
-USE_URL_DOWNLOAD=true
-AUTO_CLEANUP=true  # Delete geoserver_ready immediately after each file
-
-# Email notifications
-EMAIL_TO=martin.jancovic01@gmail.com
-EMAIL_FROM=martin.jancovic01@gmail.com
-GMAIL_APP_PASSWORD=xxxx xxxx xxxx xxxx  # Gmail App Password
-```
-
-### Dynamic Processing Periods (`lib/config.py`)
-
-The system uses a dynamic configuration to only scan the current year and month. This speeds up the auto-discovery phase significantly:
-```python
-import datetime
-PERIODS_TO_PROCESS = [(datetime.date.today().year, datetime.date.today().month)]
-HOURS = ["00", "12"]       # Hourly runs to check
-```
-
----
-
-## Usage
-
-### Basic Execution
-
-**With URL downloading (Recommended):**
-```bash
-conda activate wms
+# Normal incremental run
 python run_all_wms.py --use-url
-```
 
-### Command Line Options
+# Full reprocessing run
+python run_all_wms.py --use-url --force-reprocess --reset-each-store
 
-```bash
-python run_all_wms.py --help
+# Only run the static worker
+python run_all_wms.py --use-url --workers static
 
-Options:
-  --use-url              Download NetCDF files from URL
-  --force-reprocess      Force reprocessing of all files (ignores tracking)
-  --reset-file FILENAME  Reset the status of a specific file
-  --stats                Show processing statistics
-  --workers WORKERS      Specify workers (default: all)
-  --reset-each-store     Reset GeoServer stores before upload
-```
-
-### Examples
-
-**Auto-discovery and processing of new files:**
-```bash
-python run_all_wms.py --use-url
-```
-
-**Force reprocess all files:**
-```bash
-python run_all_wms.py --use-url --force-reprocess
-```
-
-**Show statistics:**
-```bash
+# Check stats
 python run_all_wms.py --stats
 ```
 
-**Reset a specific file:**
-```bash
-python run_all_wms.py --reset-file mediumTermTWLforecastGridded_202601010000-202601160000.nc
-```
+---
+
+## Workers
+
+### `static_wms.py` — Static Probability Layers
+
+Processes return-period probability maps (10y, 100y, 500y) as single time-step layers.
+
+- Handles 30+ variables (e.g. `probabilityTWL10y`, `probabilityWL100y`)
+- Each variable has multiple time steps (one GeoTIFF per step)
+- Uploads to GeoServer as ImageMosaic with TIME dimension
+
+### `video_wms.py` — Time-Series Video Layers
+
+Processes time-varying wave/water-level fields with 153 time steps.
+
+- Variables: `episWL75`, `TWL75` and related
+- Each time step exported as a separate GeoTIFF
+- Results in animated/time-slider WMS layers
+
+### `points_wms.py` — Coastal Point Data
+
+Processes point-based coastal forecast data with two independent dimensions.
+
+- 6 variables × 9 return periods (e.g. `episWL10y`, `episWL50y`, …)
+- Dimensions: TIME + ELEVATION
+- Publishes to GeoServer with both dimensions enabled
 
 ---
 
-## How the System Works
+## Library Modules
 
-### 1. Auto-Discovery
+### `lib/config.py`
 
-The system automatically scans the remote FTP server based on the `PERIODS_TO_PROCESS` setting:
+Loads all configuration from `.env` and exposes constants used across the pipeline.
 
-1. Starts combining the `BASE_URL` with the target `year/` and `month/`.
-2. Finds day folders: `01/`, `02/`, ..., `31/`
-3. Checks assigned hour folders inside each day: `00/`, `12/`
-4. Lists all `.nc` files.
-5. Checks PostgreSQL tracking log - skips already successfully processed files.
-6. Downloads and processes only new files.
+Key exported values:
+- `GEOSERVER_URL`, `WORKSPACE`, `GEOSERVER_USER`, `GEOSERVER_PASSWORD`
+- `PG_HOST_LOCAL`, `PG_PORT`, `PG_DB`, `PG_USER`, `PG_PASS`
+- `BASE_URL`, `OUTPUT_ROOT`, `INPUT_DIR`
+- `AUTO_CLEANUP`, `USE_URL_DOWNLOAD`
+- `PERIODS_TO_PROCESS` — list of return periods to process
 
-**Benefits:**
-- Highly optimized: Skips searching entire years by focusing only on the current month.
-- 1 PostgreSQL query batch instead of hundreds (optimization).
-- Intelligent skipping of processed files.
+### `lib/download.py`
 
-### 2. Stream Processing
+- Parses the remote directory listing at `BASE_URL`
+- Filters for `.nc` files not yet in the tracking DB
+- Downloads with streaming HTTP (no full memory load)
+- Returns local file path for processing
 
-```text
-File 1:
-  → Download to /tmp
-  → Process via 3 workers
-  → Upload to GeoServer
-  → Clean up /tmp
+### `lib/geoserver.py`
 
-File 2:
-  → Download to /tmp
-  → ...
-```
+REST API client for GeoServer. Key operations:
+- Create / update workspace
+- Create / reset ImageMosaic coverage store
+- Upload GeoTIFF into an existing store
+- Trigger reharvest (re-index all granules)
+- Enable TIME / ELEVATION dimensions on a layer
+- Assign styles to layers
 
-**Benefits:**
-- **Low disk usage:** Only 1 NetCDF file is stored locally at a time.
-- **Fast Failure:** Errors do not stop the entire queue.
-- **Real-time visibility:** Progressive tracking system shows live status.
+### `lib/postgis.py`
 
-### 3. Worker Types
+Creates and manages PostGIS schemas used as ImageMosaic index tables. Creates one schema per layer with:
+- `the_geom` — bounding polygon (EPSG:4326)
+- `location` — path to the GeoTIFF granule
+- `ingestion` — timestamp (TIME dimension)
+- `elevation` — integer (ELEVATION dimension, points worker only)
 
-#### **static_wms.py** - Static Probability Layers
-Processes 12 variables:
-- `probabilityEpis10y_1_15`, `probabilityEpis10y_1_3`, `probabilityEpis10y_4_15`
-- `probabilityEpis500y_1_15`, `probabilityEpis500y_1_3`, `probabilityEpis500y_4_15`
-- `probabilityTWL10y_1_15`, `probabilityTWL10y_1_3`, `probabilityTWL10y_4_15`
-- `probabilityTWL500y_1_15`, `probabilityTWL500y_1_3`, `probabilityTWL500y_4_15`
-**Style:** `STATIC_WMS`
+### `lib/tracking.py`
 
-#### **video_wms.py** - Video Time Series
-Processes:
-- `episWL75` (153 time steps)
-- `TWL75` (153 time steps)
-**Style:** `VIDEO_WMS`
+PostgreSQL-backed tracking of processed files.
 
-#### **points_wms.py** - Coastal Point Data
-Processes 6 variables × 9 return periods:
-- `probabilityEpiscoast_01_15`, `...`
-**Style:** `POINTS_WMS`  
-**Dimensions:** TIME + ELEVATION (rp0-rp8)
+Table: `wms_processing_log`
 
----
+| Column | Type | Description |
+|--------|------|-------------|
+| `filename` | VARCHAR(255) | Unique NetCDF filename |
+| `issue_timestamp` | VARCHAR(12) | 12-char timestamp extracted from filename |
+| `file_url` | TEXT | Source URL |
+| `file_size_bytes` | BIGINT | File size |
+| `status` | VARCHAR(20) | `pending`, `downloading`, `processing`, `success`, `failed` |
+| `layer_type` | VARCHAR(50) | `static`, `video`, or `points` |
+| `layers_processed` | TEXT[] | Array of published layer names |
+| `error_message` | TEXT | Error details on failure |
 
-## PostgreSQL Tracking System
+Key functions:
+- `initialize_tracking_db()` — create table if not exists
+- `mark_file_pending(filename, url)` — register new file
+- `mark_file_success(filename, layers)` — mark complete
+- `mark_file_failed(filename, error)` — record failure
+- `get_pending_files()` — list unprocessed files
+- `get_processing_stats()` — summary counts by status
 
-### `wms_processing_log` Table
+### `lib/netcdf_utils.py`
 
-```sql
-CREATE TABLE wms_processing_log (
-    id SERIAL PRIMARY KEY,
-    filename VARCHAR(255) NOT NULL,
-    issue_timestamp VARCHAR(12) NOT NULL,
-    status VARCHAR(50) NOT NULL,
-    worker VARCHAR(100),
-    download_url TEXT,
-    error_message TEXT,
-    processing_started TIMESTAMP,
-    processing_completed TIMESTAMP
-);
-```
-
-### File Statuses
-- `downloading` - File is currently downloading
-- `processing` - File is processing through workers
-- `success` - Successfully completely processed ✅
-- `failed` - Error during processing ❌
+Utilities for reading and exporting NetCDF data:
+- Variable inspection (list variables, dimensions, shape)
+- Export one variable + time step to GeoTIFF (with CRS and bounds)
+- Batch export all time steps of a variable
+- Reads coordinate reference system from file metadata
 
 ---
 
-## Data Management & Cleanup
+## Email Notifications
 
-After processing each NetCDF file, the system automatically:
-1. Uploads GeoTIFFs to GeoServer (which stores them in its permanent `data_dir`).
-2. **Immediately deletes the entire working directory** (`geoserver_ready/`).
-3. Creates a new empty directory for the next file.
+`send_email_notification.py` sends Gmail SMTP notifications after each pipeline run.
 
-**Important details:**
-- ✅ **GeoServer WMS Data** - kept forever in `data_dir`.
-- ✅ **PostGIS index** - contains all time steps.
-- 🗑️ **Working directory** - deleted immediately after each file.
-- 💾 **Disk savings** - working directory never exceeds the size of 1 file (~13GB).
+The subject line contains the run timestamp and status:
+- `[WMS] Run 8am success` — when all files processed
+- `[WMS] Run 8am FAILED` — when one or more files failed
 
-Configuration:
-```bash
-export AUTO_CLEANUP=true  # Automatic deletion after each file (default)
-```
+The log file is attached to the email.
 
----
+**Requirements:**
+- Gmail account with App Password enabled
+- `.env` variables: `EMAIL_TO`, `EMAIL_FROM`, `GMAIL_APP_PASSWORD`
 
-## Monitoring and Cron Jobs
-
-### Disk Capacity Monitoring
-
-```bash
-./monitor_storage.sh
-```
-This script checks if GeoServer's `data_dir` or specific layers exceed defined limits.
-
-### Automated Email Notifications
-
-Use the wrapper script `run_wms_with_email.sh`:
-
-```bash
-./run_wms_with_email.sh /opt/geoserver/logs/wms.log "manual-test"
-```
-You can test the email configuration via:
+**Test your email config:**
 ```bash
 python test_email.py
 ```
 
-### Production Crontab Setup
-
-```cron
-# WMS Processing with Email Notifications (3x daily)
-0 8 * * * cd /opt/geoserver/scripts && bash run_wms_with_email.sh /opt/geoserver/logs/wms_8am.log "8am" >> /opt/geoserver/logs/cron.log 2>&1
-0 13 * * * cd /opt/geoserver/scripts && bash run_wms_with_email.sh /opt/geoserver/logs/wms_2pm.log "2pm" >> /opt/geoserver/logs/cron.log 2>&1
-0 20 * * * cd /opt/geoserver/scripts && bash run_wms_with_email.sh /opt/geoserver/logs/wms_8pm.log "8pm" >> /opt/geoserver/logs/cron.log 2>&1
-
-# Storage Monitoring (daily at 9am)
-0 9 * * * cd /opt/geoserver/scripts && bash monitor_storage.sh >> /opt/geoserver/logs/storage_monitor.log 2>&1
-```
-
 ---
 
-## GeoServer WMS Usage
+## Storage Monitoring
 
-### GetCapabilities Example
+`monitor_storage.sh` checks disk capacity on configured mount points and logs a warning if usage exceeds a threshold (default: 80%).
 
-```
-http://89.47.190.36:8080/geoserver/E_and_T/wms?
-  service=WMS&
-  version=1.3.0&
-  request=GetCapabilities
-```
+Run daily via cron or manually:
 
-### GetMap Request Example
-
-```
-http://89.47.190.36:8080/geoserver/E_and_T/wms?
-  service=WMS&
-  version=1.3.0&
-  request=GetMap&
-  layers=E_and_T:probabilityTWL10y_1_15&
-  styles=STATIC_WMS&
-  bbox=-180,-90,180,90&
-  width=800&
-  height=400&
-  srs=EPSG:4326&
-  format=image/png&
-  time=2026-01-01T00:00:00Z
-```
-
-### Dimensions
-
-**TIME Dimension:**
-```
-time=2026-01-01T00:00:00Z                    # Specific time
-time=2026-01-01T00:00:00Z/2026-01-15T00:00:00Z  # Time range
-```
-
-**ELEVATION Dimension (applies to `points_wms` only):**
-```
-elevation=0       # rp0
-elevation=1       # rp1
-...
-elevation=8       # rp8
-```
-
----
-
-## Troubleshooting
-
-### Problem: HTTP 500 on first run
-**Solution:** Use `--reset-each-store` parameter for the very first execution:
 ```bash
-python run_all_wms.py --use-url --reset-each-store
+bash monitor_storage.sh
 ```
 
-### Problem: PostgreSQL connection refused
-**Solution:** Ensure PostgreSQL container or local service is running and `PG_HOST_LOCAL` matches your environment network logic.
+---
 
-### Problem: 404 errors during auto-discovery
-**Solution:** The system's HTML parser securely handles Nginx/Apache directory listings, skipping invalid paths. Ensure the `BASE_URL` ends with a `/` and the directory is accessible.
+## Environment Variables
 
-### Files are not skipping
-**Solution:** Verify that timestamps are parsing correctly, and use `python run_all_wms.py --stats` to visualize tracking status.
+All variables are read from `scripts/.env`.
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `GEOSERVER_URL` | Yes | GeoServer base URL |
+| `GEOSERVER_USER` | Yes | GeoServer admin username |
+| `GEOSERVER_PASSWORD` | Yes | GeoServer admin password |
+| `WORKSPACE` | Yes | GeoServer workspace name (default: `E_and_T`) |
+| `STYLE_NAME` | No | Default style for static layers |
+| `VIDEO_STYLE` | No | Style for video layers |
+| `POINTS_STYLE` | No | Style for point layers |
+| `PG_HOST_LOCAL` | Yes | PostgreSQL host for scripts (e.g. `127.0.0.1`) |
+| `PG_HOST_GEOSERVER` | Yes | PostgreSQL host from GeoServer container (e.g. `pgbouncer`) |
+| `PG_PORT` | Yes | PostgreSQL port (default: `5432`) |
+| `PG_DB` | Yes | Database name (default: `gis`) |
+| `PG_USER` | Yes | Database username |
+| `PG_PASS` | Yes | Database password |
+| `BASE_URL` | Yes | JRC-FLOODS FTP base URL for file discovery |
+| `INPUT_DIR` | No | Local directory with NetCDF files (alternative to URL mode) |
+| `OUTPUT_ROOT` | Yes | Root directory where GeoTIFFs are written |
+| `GEOSERVER_DATA_DIR` | Yes | GeoServer data directory path |
+| `AUTO_CLEANUP` | No | Delete working dir after each file (`true`/`false`, default: `true`) |
+| `USE_URL_DOWNLOAD` | No | Enable HTTP downloading (`true`/`false`, default: `true`) |
+| `EMAIL_TO` | No | Notification recipient address |
+| `EMAIL_FROM` | No | Gmail sender address |
+| `GMAIL_APP_PASSWORD` | No | Gmail App Password (16 characters, spaces allowed) |
+
+---
+
+## Cron Setup
+
+Install the provided cron configuration:
+
+```bash
+crontab wms_crontab.txt
+```
+
+Schedule (all times local):
+
+| Time | Action |
+|------|--------|
+| 08:00 | Pipeline run + email |
+| 13:00 | Pipeline run + email |
+| 20:00 | Pipeline run + email |
+| 09:00 | Disk space check |
+
+Logs are written to `/opt/geoserver/logs/`.
+
+---
+
+## Python Dependencies
+
+See `requirements.txt`. Key packages:
+
+| Package | Purpose |
+|---------|---------|
+| `xarray` | NetCDF file reading |
+| `rioxarray` | Raster I/O extension for xarray |
+| `netCDF4` | Low-level NetCDF reader |
+| `rasterio` | GeoTIFF writing via GDAL |
+| `psycopg2-binary` | PostgreSQL client |
+| `requests` | HTTP downloads and GeoServer REST API |
+| `python-dotenv` | `.env` file loading |
+| `tqdm` | Progress bar output |
+
+Install:
+
+```bash
+pip install -r requirements.txt
+```
+
+---
+
+## Utility Scripts
+
+| Script | Usage |
+|--------|-------|
+| `seed.py` | One-time database seed with initial data |
+| `export_tracking.py` | Export `wms_processing_log` to CSV |
+| `debug_auth.py` | Verify GeoServer credentials and REST API connectivity |
+| `test_email.py` | Send a test email to verify SMTP configuration |
