@@ -76,3 +76,6 @@ web/old_versions/
 web/proxy_async.py
 web/ASYNC_PROXY_GUIDE.md
 web/proxy_debug.log
+
+### MONITORING ###
+monitoring/nginx_logs/
