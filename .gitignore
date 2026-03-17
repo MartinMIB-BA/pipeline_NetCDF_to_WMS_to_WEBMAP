@@ -43,7 +43,6 @@ proxy_debug.log
 # Ignore server directories containing large datasets or logs
 data/
 logs/
-monitoring/
 example_nc/
 uploads/
 

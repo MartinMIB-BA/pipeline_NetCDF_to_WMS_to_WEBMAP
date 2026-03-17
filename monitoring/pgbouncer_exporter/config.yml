@@ -1,0 +1,7 @@
+exporter_host: 0.0.0.0
+exporter_port: 9127
+
+pgbouncers:
+  - dsn: "postgresql://gisadmin:geoserver@pgbouncer:5432/pgbouncer?sslmode=disable"
+    labels:
+      instance: "pgbouncer"
