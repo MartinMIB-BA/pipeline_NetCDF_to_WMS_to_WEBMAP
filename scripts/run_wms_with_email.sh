@@ -11,10 +11,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # Activate conda environment
 echo "Activating conda environment 'wms'..."
-# Source user's bash_profile/bashrc so conda init is available in non-interactive cron jobs
-source ~/.bashrc 2>/dev/null || true
-# Alternatively evaluate conda hook directly
-eval "$(conda shell.bash hook 2>/dev/null)" || true
+# Source conda script directly since standard .bashrc won't work in cron
+source /home/martin/miniconda3/etc/profile.d/conda.sh || true
 conda activate wms
 
 LOG_FILE="$1"  # Log file path passed as argument

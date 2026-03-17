@@ -55,7 +55,6 @@ data/
 logs/
 example_nc/
 uploads/
-geoserver_ready/
 
 ### VIRTUAL ENVIRONMENTS & SECRETS ###
 # Never commit libraries or sensitive credentials
