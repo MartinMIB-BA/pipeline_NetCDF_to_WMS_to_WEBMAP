@@ -1,8 +1,12 @@
-### SYSTEM FILES ### TESTESTEST
+### SYSTEM FILES ###
 # Ignore OS-specific metadata files
 .DS_Store
 .AppleDouble
 .LSOverride
+
+### IDE & EDITORS ###
+.idea/
+.vscode/
 
 ### PYTHON ###
 # Ignore Python bytecode and translation artifacts
@@ -29,32 +33,41 @@ wheels/
 .installed.cfg
 *.egg
 
+# Exception for scripts library
+!scripts/lib/
+!scripts/lib/**
+
 ### PROJECT SPECIFIC (Pipeline & GeoServer) ###
 # Ignore specific script logs and temporary files
 proxy_async.py
 proxy_debug.log
+*.log
 
 # Ignore large data files (NetCDF and Excel)
 *.nc
 *.xlsx
 *.tif
 *.tiff
+*.zip
 
 # Ignore server directories containing large datasets or logs
 data/
 logs/
 example_nc/
 uploads/
+geoserver_ready/
 
 ### VIRTUAL ENVIRONMENTS & SECRETS ###
 # Never commit libraries or sensitive credentials
 venv/
 .venv/
 env/
+ENV/
 .env
 
 ### JUPYTER NOTEBOOK ###
 .ipynb_checkpoints/
+*.ipynb
 
 ### WEB / FRONTEND ###
 # Ignore node modules if you add JS libraries like Leaflet
@@ -63,16 +76,20 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
-### BACKUPS & OLD VERSIONS ###
-# Keep the repository clean of manual backups
+### BACKUPS & TEMPORARY FILES ###
+# Keep the repository clean of manual backups and temp files
 **/old/
 web/old_versions/
+*.tmp
+*.bak
+*.swp
+*~
 
 ### INSTALLERS ###
 # Ignore large binary installers
 *.sh
 
-### WEB ###
+### WEB DIR SPECIFICS ###
 web/proxy_async.py
 web/ASYNC_PROXY_GUIDE.md
 web/proxy_debug.log

@@ -3,12 +3,12 @@ from requests.auth import HTTPBasicAuth
 from datetime import datetime, timedelta
 import time
 
-# --- KONFIGURÁCIA ---
+# --- CONFIGURATION ---
 GEOSERVER_URL = "http://localhost:8080/geoserver/gwc/rest/seed/E_and_T:epis_wl75.xml"
 USER = "admin"
 PASSWORD = "geoserver"
 
-# SKÚS NAJPRV LEN TÝŽDEŇ! (Napr. 1.1. až 7.1.)
+# TRY JUST A WEEK FIRST! (E.g. Jan 1 to Jan 7)
 start_date = datetime(2026, 1, 1)
 end_date = datetime(2026, 1, 4) 
 
@@ -38,20 +38,20 @@ def start_seed(time_val, elevation_val):
             auth=HTTPBasicAuth(USER, PASSWORD),
             timeout=10
         )
-        print(f"✅ Odoslané: {time_val} | Elev: {elevation_val}")
+        print(f"✅ Sent: {time_val} | Elev: {elevation_val}")
     except Exception as e:
-        print(f"⚠️ Chyba: {e}")
+        print(f"⚠️ Error: {e}")
 
-# --- CYKLUS ---
+# --- LOOP ---
 current_date = start_date
 while current_date <= end_date:
     time_str = current_date.strftime("%Y-%m-%dT12:00:00Z")
-    print(f"\n--- Pridávam deň: {time_str} ---")
+    print(f"\n--- Adding day: {time_str} ---")
     
     for elev in elevations:
         start_seed(time_str, elev)
-        time.sleep(3) # PAUZA 3 SEKUNDY MEDZI ÚLOHAMI
+        time.sleep(3) # PAUSE 3 SECONDS BETWEEN TASKS
         
     current_date += timedelta(days=1)
-    print("--- Krátka pauza medzi dňami (30s), nech si disk vydýchne ---")
+    print("--- Short pause between days (30s) to let the disk breathe ---")
     time.sleep(90)

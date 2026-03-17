@@ -1,64 +1,64 @@
-# Inštalácia Cron Job pre WMS Processing
+# Cron Job Installation for WMS Processing
 
-## Čo som vytvoril
+## What has been created
 
-1. ✅ [`wms_crontab.txt`](file:///Users/martinjancovic/Desktop/WMS_WMS_T/scripts/wms_crontab.txt) - Konfigurácia pre automatické spustenie
+1. ✅ [`wms_crontab.txt`](file:///Users/martinjancovic/Desktop/WMS_WMS_T/scripts/wms_crontab.txt) - Configuration for automatic execution
 
-## Rozpis behu
+## Execution Schedule
 
-| Čas | Script | Log súbor | Email label |
+| Time | Script | Log file | Email label |
 |-----|--------|-----------|-------------|
-| **08:00** | `run_wms_with_email.sh` | `/home/martin/logs/wms_8am.log` | "8am" |
-| **14:00** | `run_wms_with_email.sh` | `/home/martin/logs/wms_2pm.log` | "2pm" |
-| **20:00** | `run_wms_with_email.sh` | `/home/martin/logs/wms_8pm.log` | "8pm" |
-| **09:00** | `monitor_storage.sh` | `/home/martin/logs/storage_monitor.log` | - |
+| **08:00** | `run_wms_with_email.sh` | `/opt/geoserver/logs/wms_8am.log` | "8am" |
+| **13:00** | `run_wms_with_email.sh` | `/opt/geoserver/logs/wms_2pm.log` | "2pm" |
+| **20:00** | `run_wms_with_email.sh` | `/opt/geoserver/logs/wms_8pm.log` | "8pm" |
+| **09:00** | `monitor_storage.sh` | `/opt/geoserver/logs/storage_monitor.log` | - |
 
-## Ako nainštalovať na server
+## How to install on the server
 
-**Na serveri `martin@vmi2540215` spustite:**
+**On the server run:**
 
 ```bash
-# 1. Prejdite do adresára
-cd ~/scripts
+# 1. Navigate to directory
+cd /opt/geoserver/scripts
 
-# 2. Vytvorte logs adresár (ak neexistuje)
-mkdir -p ~/logs
+# 2. Create logs directory (if it does not exist)
+mkdir -p /opt/geoserver/logs
 
-# 3. Nainštalujte crontab
+# 3. Install crontab
 crontab wms_crontab.txt
 
-# 4. Overte, že sa nastavil
+# 4. Verify installation
 crontab -l
 ```
 
-## Overenie
+## Verification
 
-Po inštalácii môžete:
+After installation you can:
 
 ```bash
-# Pozrieť aktuálne nastavené cron joby
+# View currently set cron jobs
 crontab -l
 
-# Sledovať cron logy
-tail -f ~/logs/cron.log
+# Monitor cron logs
+tail -f /opt/geoserver/logs/cron.log
 
-# Vyskúšať manuálne (bez čakania na cron)
-bash run_wms_with_email.sh ~/logs/test.log "manual-test"
+# Run manually (without waiting for cron)
+bash run_wms_with_email.sh /opt/geoserver/logs/test.log "manual-test"
 ```
 
-## Čo bude robiť
+## What it will do
 
-- **WMS Processing** sa spustí 3× denne automaticky
-- Po každom behu dostanete **email** s výsledkom (úspech/chyba)
-- Logy sa ukladajú do `/home/martin/logs/`
-- Každý beh má **vlastný log súbor** podľa času
+- **WMS Processing** will run 3× a day automatically
+- After each run you will receive an **email** with the result (success/error)
+- Logs are saved to `/opt/geoserver/logs/`
+- Each run has its **own log file** based on the time
 
-## Dôležité
+## Important
 
 > [!IMPORTANT]
-> Uistite sa, že máte **GMAIL_APP_PASSWORD** nastavený v `/home/martin/scripts/.env` na serveri!
+> Ensure you have **GMAIL_APP_PASSWORD** set in `/opt/geoserver/scripts/.env` on the server!
 
 ```bash
-# Skontrolujte .env na serveri
-cat ~/scripts/.env | grep GMAIL_APP_PASSWORD
+# Check .env on the server
+cat /opt/geoserver/scripts/.env | grep GMAIL_APP_PASSWORD
 ```
