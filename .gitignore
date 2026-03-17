@@ -1,15 +1,18 @@
-# MacOS
+### SYSTEM FILES ###
+# Ignore OS-specific metadata files
 .DS_Store
 .AppleDouble
 .LSOverride
 
-# Python
+### PYTHON ###
+# Ignore Python bytecode and translation artifacts
 __pycache__/
 *.py[cod]
 *$py.class
 *.so
 .Python
-env/
+
+# Ignore distribution and build folders
 build/
 develop-eggs/
 dist/
@@ -25,22 +28,52 @@ wheels/
 *.egg-info/
 .installed.cfg
 *.egg
+
+### PROJECT SPECIFIC (Pipeline & GeoServer) ###
+# Ignore specific script logs and temporary files
 proxy_async.py
 proxy_debug.log
 
+# Ignore large data files (NetCDF and Excel)
+*.nc
+*.xlsx
+*.tif
+*.tiff
+
+# Ignore server directories containing large datasets or logs
+data/
+logs/
+monitoring/
+example_nc/
+uploads/
+
+### VIRTUAL ENVIRONMENTS & SECRETS ###
+# Never commit libraries or sensitive credentials
 venv/
 .venv/
 env/
 .env
 
-# Jupyter Notebook
+### JUPYTER NOTEBOOK ###
 .ipynb_checkpoints/
 
-# Node
+### WEB / FRONTEND ###
+# Ignore node modules if you add JS libraries like Leaflet
 node_modules/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
-*.nc
-*.xlsx
+### BACKUPS & OLD VERSIONS ###
+# Keep the repository clean of manual backups
+**/old/
+web/old_versions/
+
+### INSTALLERS ###
+# Ignore large binary installers
+*.sh
+
+### WEB ###
+web/proxy_async.py
+web/ASYNC_PROXY_GUIDE.md
+web/proxy_debug.log
