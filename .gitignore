@@ -8,14 +8,6 @@
 .idea/
 .vscode/
 
-### PYTHON ###
-# Ignore Python bytecode and translation artifacts
-__pycache__/
-*.py[cod]
-*$py.class
-*.so
-.Python
-
 # Ignore distribution and build folders
 build/
 develop-eggs/
@@ -95,3 +87,11 @@ web/proxy_debug.log
 
 ### MONITORING ###
 monitoring/nginx_logs/
+
+### PYTHON ###
+# Ignore Python bytecode and translation artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
