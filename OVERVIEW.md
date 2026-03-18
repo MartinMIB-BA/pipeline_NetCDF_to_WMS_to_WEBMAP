@@ -29,7 +29,7 @@ Once the NetCDF files are safely retrieved, the data conversion process transfor
 - **Targeted Pipeline Workers**: A main orchestrator (`run_all_wms.py`) delegates each newly downloaded file directly to specialized workers (`static_wms.py`, `video_wms.py`, `points_wms.py`). They extract forecast variables natively and immediately convert them into GeoTIFF format, allowing for constant cleanup of temporary buffers (`AUTO_CLEANUP=true`).
 - **Layer Types**: The conversion accounts for three distinct layer mechanisms:
   - **Static**: Probability maps (e.g., 10y, 100y, 500y) utilizing the TIME dimension.
-  - **Video / Time-series**: Wave and water-level forecasts containing 153 time steps (TIME dimension).
+  - **Video / Time-series**: Wave and water-level forecasts.
   - **Points**: Point-type Coastal forecasts requiring both TIME and ELEVATION dimensions.
 - **Database & Granules**: During conversion, an ImageMosaic granule index is aggressively built. To handle high-performance spatial queries, the **PostGIS/PostgreSQL** container is heavily tuned (e.g., 8GB `shared_buffers`, 24GB `effective_cache_size`).
 - **Alerting & Logs**: After the entire pipeline processing (both retrieval and conversion) completes natively, automated email notifications (with execution logs securely attached) are sent to administrators. Throughout the process, pipeline logs run centrally and are continuously aggregated into **Loki** via **Promtail**. 
