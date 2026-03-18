@@ -148,7 +148,7 @@ Three layer types are published to GeoServer:
 | Type | Worker | Dimensions | Example Layer |
 |------|--------|------------|---------------|
 | Static | `static_wms.py` | TIME | `probabilityTWL10y_1_15` |
-| Video | `video_wms.py` | TIME (153 steps) | `episWL75`, `TWL75` |
+| Video | `video_wms.py` | TIME | `episWL75`, `TWL75` |
 | Points | `points_wms.py` | TIME + ELEVATION | `coastal_point_episWL10y` |
 
 All layers are published under GeoServer workspace `E_and_T`.
