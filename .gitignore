@@ -76,10 +76,6 @@ web/old_versions/
 *.swp
 *~
 
-### INSTALLERS ###
-# Ignore large binary installers
-*.sh
-
 ### WEB DIR SPECIFICS ###
 web/proxy_async.py
 web/ASYNC_PROXY_GUIDE.md
