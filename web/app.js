@@ -1,8 +1,7 @@
 // GeoServer configuration - AUTO DETECT ENVIRONMENT
 window.isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-// const GEOSERVER_URL = window.isLocalhost ? 'http://localhost:8080' : '/geoserver';
-// app.js:3 — zmeň localhost URL na externý server
-const GEOSERVER_URL = window.isLocalhost ? 'http://89.47.190.36:8080/geoserver' : '/geoserver';
+const GEOSERVER_URL = window.isLocalhost ? 'http://localhost:8080' : '/geoserver';
+// const GEOSERVER_URL = window.isLocalhost ? 'http://89.47.190.36/geoserver' : '/geoserver';
 
 const WORKSPACE = 'E_and_T';
 
@@ -422,7 +421,20 @@ const layerMetadata = {
     // Video layers
     'epis_wl75': { type: 'video', hasElevation: true, description: 'Episode water level 75th percentile (with lead time)' },
 
-    'twl75': { type: 'video', hasElevation: true, description: 'Total water level 75th percentile (with lead time)' }
+    'twl75': { type: 'video', hasElevation: true, description: 'Total water level 75th percentile (with lead time)' },
+
+    // ── GloFAS layers (external WMS) ──────────────────────────────
+    'RPGM': { type: 'glofas', hasElevation: false, wmsUrl: 'https://ows.globalfloods.eu/glofas-ows/ows.py', description: 'Medium alert — return period > 2 years' },
+    'RPGH': { type: 'glofas', hasElevation: false, wmsUrl: 'https://ows.globalfloods.eu/glofas-ows/ows.py', description: 'High alert — return period > 5 years' },
+    'RPGS': { type: 'glofas', hasElevation: false, wmsUrl: 'https://ows.globalfloods.eu/glofas-ows/ows.py', description: 'Severe alert — return period > 20 years' },
+    'sumAL41EGE': { type: 'glofas', hasElevation: false, wmsUrl: 'https://ows.globalfloods.eu/glofas-ows/ows.py', description: 'Flood summary days 1–3' },
+    'sumAL42EGE': { type: 'glofas', hasElevation: false, wmsUrl: 'https://ows.globalfloods.eu/glofas-ows/ows.py', description: 'Flood summary days 4–10' },
+    'sumAL43EGE': { type: 'glofas', hasElevation: false, wmsUrl: 'https://ows.globalfloods.eu/glofas-ows/ows.py', description: 'Flood summary days 11–15' },
+    'FloodSummary1_30': { type: 'glofas', hasElevation: false, wmsUrl: 'https://ows.globalfloods.eu/glofas-ows/ows.py', description: 'Flood summary days 1–15' },
+    'EGE_probRgt50': { type: 'glofas', hasElevation: false, wmsUrl: 'https://ows.globalfloods.eu/glofas-ows/ows.py', description: 'Precipitation probability > 50 mm' },
+    'EGE_probRgt150': { type: 'glofas', hasElevation: false, wmsUrl: 'https://ows.globalfloods.eu/glofas-ows/ows.py', description: 'Precipitation probability > 150 mm' },
+    'AccRainEGE': { type: 'glofas', hasElevation: false, wmsUrl: 'https://ows.globalfloods.eu/glofas-ows/ows.py', description: 'Accumulated precipitation' },
+    'FloodHazard100y': { type: 'glofas', hasElevation: false, wmsUrl: 'https://ows.globalfloods.eu/glofas-ows/ows.py', description: 'Flood hazard — 100 year return period (static)' }
 };
 
 // Debounce function

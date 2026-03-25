@@ -53,13 +53,27 @@ const layerDisplayNames = {
     // Video layers
     'epis_wl75': 'Episode WL 75',
 
-    'twl75': 'Total WL 75'
+    'twl75': 'Total WL 75',
+
+    // GloFAS layers (external WMS)
+    'RPGM': 'Medium Alert (>2yr RP)',
+    'RPGH': 'High Alert (>5yr RP)',
+    'RPGS': 'Severe Alert (>20yr RP)',
+    'sumAL41EGE': 'Flood Summary (1–3d)',
+    'sumAL42EGE': 'Flood Summary (4–10d)',
+    'sumAL43EGE': 'Flood Summary (11–15d)',
+    'FloodSummary1_30': 'Flood Summary (1–15d)',
+    'EGE_probRgt50': 'Precip. Prob. >50mm',
+    'EGE_probRgt150': 'Precip. Prob. >150mm',
+    'AccRainEGE': 'Accumulated Precip.',
+    'FloodHazard100y': 'Flood Hazard 100yr'
 };
 
 const LAYER_BUBBLE_CATEGORIES = [
     { key: 'static', label: 'RETURN PERIOD LAYERS', icon: 'fa-layer-group', type: 'static' },
     { key: 'coastal', label: 'COASTAL and POINT DATA', icon: 'fa-location-dot', type: 'points' },
-    { key: 'video', label: 'FORECAST LAYERS', icon: 'fa-film', type: 'video' }
+    { key: 'video', label: 'FORECAST LAYERS', icon: 'fa-film', type: 'video' },
+    { key: 'glofas', label: 'GloFAS LAYERS', icon: 'fa-water', type: 'glofas' }
 ];
 
 function hasForecastDateLabel(metadata) {
@@ -134,6 +148,12 @@ function initializeLayerList() {
         ],
         '🎥 Forecast Layers': [
             'epis_wl75', 'twl75'
+        ],
+        '🌐 GloFAS Layers': [
+            'RPGM', 'RPGH', 'RPGS',
+            'sumAL41EGE', 'sumAL42EGE', 'sumAL43EGE', 'FloodSummary1_30',
+            'EGE_probRgt50', 'EGE_probRgt150', 'AccRainEGE',
+            'FloodHazard100y'
         ]
     };
 
@@ -165,7 +185,14 @@ function initializeLayerList() {
                         </button>
                     </div>
                     <div class="layer-legend-panel" id="legend-${layerId}" style="display:none;">
-                        <div class="layer-legend-title">Legend</div>
+                        <div class="layer-legend-title-row">
+                            <div class="layer-legend-title">Legend</div>
+                            <div class="layer-legend-scale">
+                                <button class="legend-scale-btn" data-legend="${layerId}" data-action="shrink" title="Zmenšiť">−</button>
+                                <button class="legend-scale-btn" data-legend="${layerId}" data-action="reset" title="Pôvodná veľkosť">↺</button>
+                                <button class="legend-scale-btn" data-legend="${layerId}" data-action="grow" title="Zväčšiť">+</button>
+                            </div>
+                        </div>
                         <div class="layer-legend-content">
                             <img id="legend-img-${layerId}" alt="Legend for ${displayName}" style="display:none;">
                             <div id="legend-empty-${layerId}" class="layer-legend-empty">Loading legend...</div>
@@ -350,7 +377,7 @@ function generateLayerControls(layerId) {
     let html = '';
 
     // Time control (ONLY for non-static layers like video and points)
-    if (metadata.type !== 'static') {
+    if (metadata.type !== 'static' && metadata.type !== 'glofas') {
         // For forecast-style layers (video + coastal points), show dynamic forecast date label
         if (hasForecastDateLabel(metadata)) {
             html += `
@@ -477,16 +504,14 @@ function attachCollapsibleListeners() {
 }
 
 function buildLegendUrl(layerId) {
-    const layerName = `${WORKSPACE}:${layerId}`;
-    const params = new URLSearchParams({
-        service: 'WMS',
-        request: 'GetLegendGraphic',
-        format: 'image/png',
-        transparent: 'true',
-        version: '1.3.0',
-        layer: layerName
-    });
-    return `${GEOSERVER_URL}/wms?${params.toString()}`;
+    const meta = window.layerMetadata && window.layerMetadata[layerId];
+    const isGlofas = !!(meta && meta.wmsUrl);
+    const layerName = isGlofas ? layerId : `${WORKSPACE}:${layerId}`;
+    const baseUrl = isGlofas ? meta.wmsUrl : `${GEOSERVER_URL}/wms`;
+    const legendParams = isGlofas
+        ? { service: 'WMS', request: 'GetLegendGraphic', format: 'image/png', version: '1.1.1', SLD_VERSION: '1.1.0', layer: layerName }
+        : { service: 'WMS', request: 'GetLegendGraphic', format: 'image/png', transparent: 'true', version: '1.3.0', layer: layerName };
+    return `${baseUrl}?${new URLSearchParams(legendParams).toString()}`;
 }
 
 function loadLegendForLayer(layerId) {
@@ -498,6 +523,8 @@ function loadLegendForLayer(layerId) {
     if (panel.dataset.loaded === '1') return;
 
     const legendUrl = buildLegendUrl(layerId);
+    const meta = window.layerMetadata && window.layerMetadata[layerId];
+    const isGlofas = !!(meta && meta.wmsUrl);
     img.onload = () => {
         img.style.display = 'block';
         empty.style.display = 'none';
@@ -532,7 +559,32 @@ function attachLegendInfoListeners() {
             }
         });
     });
+
 }
+
+// Legend scale buttons — single delegated listener on document (legendEl moves between containers)
+document.addEventListener('click', function (e) {
+    const btn = e.target.closest('.legend-scale-btn');
+    if (!btn) return;
+    e.preventDefault();
+    e.stopPropagation();
+
+    const layerId = btn.getAttribute('data-legend');
+    const img = document.getElementById(`legend-img-${layerId}`);
+    if (!img) return;
+
+    const STEP = 20;
+    const current = parseInt(img.dataset.scale || '100', 10);
+    let next = current;
+
+    if (btn.dataset.action === 'grow')   next = Math.min(current + STEP, 200);
+    if (btn.dataset.action === 'shrink') next = Math.max(current - STEP, 20);
+    if (btn.dataset.action === 'reset')  next = 100;
+
+    img.dataset.scale = next;
+    img.style.width = `${next}%`;
+    img.style.maxWidth = 'none';
+});
 
 // Add a layer
 function addLayer(layerId) {
@@ -649,13 +701,17 @@ function addLayer(layerId) {
     const gwcLayers = ['twl75', 'epis_wl75'];
     const isGwcLayer = gwcLayers.includes(layerId);
 
+    const isGlofas = !!(metadata && metadata.wmsUrl);
+
     const wmsParams = {
-        layers: `${WORKSPACE}:${layerId}`,
+        layers: isGlofas ? layerId : `${WORKSPACE}:${layerId}`,
         format: 'image/png',
         transparent: true,
         version: '1.3.0',
-        time: params.time, // ALWAYS send time, even for "static" layers (they are forecast products)
-        elevation: params.elevation // CRITICAL: Include elevation so setParams updates work on GWC
+        ...(isGlofas ? {} : {
+            time: params.time, // ALWAYS send time for GeoServer layers
+            elevation: params.elevation
+        })
     };
 
     if (isGwcLayer) {
@@ -665,8 +721,8 @@ function addLayer(layerId) {
         wmsParams.srs = 'EPSG:900913'; // GWC parser needs lowercase srs in v1.1.1
     }
 
-    // Direct GWC integration for video layers
-    const endpoint = isGwcLayer ? `${GEOSERVER_URL}/gwc/service/wms` : `${GEOSERVER_URL}/wms`;
+    // Use external WMS URL for GloFAS layers, GWC for video, GeoServer WMS otherwise
+    const endpoint = isGlofas ? metadata.wmsUrl : (isGwcLayer ? `${GEOSERVER_URL}/gwc/service/wms` : `${GEOSERVER_URL}/wms`);
     let wmsLayer = L.tileLayer.wms(endpoint, {
         ...wmsParams,
         // CRITICAL FIX FOR GWC: Force Leaflet to NOT use the map's custom CRS if it's a GWC layer
