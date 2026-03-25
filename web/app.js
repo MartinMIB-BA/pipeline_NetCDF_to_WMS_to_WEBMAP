@@ -1,6 +1,9 @@
 // GeoServer configuration - AUTO DETECT ENVIRONMENT
 window.isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-const GEOSERVER_URL = window.isLocalhost ? 'http://localhost:8080' : '/geoserver';
+// const GEOSERVER_URL = window.isLocalhost ? 'http://localhost:8080' : '/geoserver';
+// app.js:3 — zmeň localhost URL na externý server
+const GEOSERVER_URL = window.isLocalhost ? 'http://89.47.190.36:8080/geoserver' : '/geoserver';
+
 const WORKSPACE = 'E_and_T';
 
 // ═══════════════════════════════════════════════════════════════
