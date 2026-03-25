@@ -52,8 +52,8 @@ services:
       - "80:80"
     volumes:
       - /opt/geoserver/web:/usr/share/nginx/html:ro
-      - /opt/geoserver/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
-      - /opt/geoserver/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - /opt/geoserver/docker/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+      - /opt/geoserver/docker/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
       - /opt/geoserver/monitoring/nginx_logs:/var/log/nginx
     restart: unless-stopped
     
