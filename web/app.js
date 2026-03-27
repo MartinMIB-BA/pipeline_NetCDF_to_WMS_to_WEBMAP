@@ -2362,8 +2362,8 @@ async function getFeatureInfo(latlng) {
 async function queryLayer(layerId, layerData, latlng, point, size, signal) {
     const metadata = layerData.metadata || layerMetadata[layerId];
 
-    // Skip external layers
-    if (metadata && metadata.external) {
+    // Skip external layers (Copernicus) and GloFAS WMS layers (not on local GeoServer)
+    if (metadata && (metadata.external || metadata.wmsUrl)) {
         return { layerId, layerName: layerDisplayNames[layerId] || layerId, features: [] };
     }
 
@@ -2523,24 +2523,10 @@ if (basemapSelect) {
 }
 
 console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-console.log('🗺️ WMS Viewer initialized (ZOOM-FIX VERSION)');
+console.log('🗺️ WMS Viewer initialized');
 console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-console.log('✅ CRITICAL FIXES APPLIED:');
-console.log('   - Defensive GridLayer patches (prevents null crashes)');
-console.log('   - Forced redraw after zoom (fixes stuck tiles)');
-console.log('   - updateWhenIdle: true (waits for zoom to finish)');
-console.log('   - GetFeatureInfo popups on click');
-console.log('');
-console.log('⚡ Performance settings (ZOOM-OPTIMIZED):');
-console.log('   - tileSize: 512');
-console.log('   - keepBuffer: 1 (smoother edges during interaction)');
-console.log('   - updateInterval: 300ms (faster but stable updates)');
-console.log('   - updateWhenIdle: true ✅ (update after zoom)');
-console.log('   - updateWhenZooming: false (stability during zoom)');
-console.log('');
-console.log('Proxy URL:', GEOSERVER_URL);
-console.log('Workspace:', WORKSPACE);
-console.log('⚠️  Make sure to run: python3 proxy.py');
+console.log('📡 GeoServer:', GEOSERVER_URL);
+console.log('📂 Workspace:', WORKSPACE);
 console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
 
 // ═══════════════════════════════════════════════════════════════
