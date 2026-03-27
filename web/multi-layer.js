@@ -66,7 +66,8 @@ const layerDisplayNames = {
     'EGE_probRgt50': 'Precip. Prob. >50mm',
     'EGE_probRgt150': 'Precip. Prob. >150mm',
     'AccRainEGE': 'Accumulated Precip.',
-    'FloodHazard100y': 'Flood Hazard 100yr'
+    'FloodHazard100y': 'Flood Hazard 100yr',
+    'reportingPoints': 'Reporting Points'
 };
 
 const LAYER_BUBBLE_CATEGORIES = [
@@ -153,7 +154,7 @@ function initializeLayerList() {
             'RPGM', 'RPGH', 'RPGS',
             'sumAL41EGE', 'sumAL42EGE', 'sumAL43EGE', 'FloodSummary1_30',
             'EGE_probRgt50', 'EGE_probRgt150', 'AccRainEGE',
-            'FloodHazard100y'
+            'FloodHazard100y', 'reportingPoints'
         ]
     };
 
@@ -522,9 +523,17 @@ function loadLegendForLayer(layerId) {
 
     if (panel.dataset.loaded === '1') return;
 
-    const legendUrl = buildLegendUrl(layerId);
     const meta = window.layerMetadata && window.layerMetadata[layerId];
-    const isGlofas = !!(meta && meta.wmsUrl);
+
+    if (meta && meta.legendHtml) {
+        img.style.display = 'none';
+        empty.innerHTML = meta.legendHtml;
+        empty.style.display = 'block';
+        panel.dataset.loaded = '1';
+        return;
+    }
+
+    const legendUrl = buildLegendUrl(layerId);
     img.onload = () => {
         img.style.display = 'block';
         empty.style.display = 'none';
@@ -703,12 +712,16 @@ function addLayer(layerId) {
 
     const isGlofas = !!(metadata && metadata.wmsUrl);
 
+    const glofasTime = (isGlofas && metadata.requiresTime)
+        ? new Date().toISOString().split('T')[0] + 'T00:00:00'
+        : undefined;
+
     const wmsParams = {
         layers: isGlofas ? layerId : `${WORKSPACE}:${layerId}`,
         format: 'image/png',
         transparent: true,
         version: '1.3.0',
-        ...(isGlofas ? {} : {
+        ...(isGlofas ? (glofasTime ? { time: glofasTime } : {}) : {
             time: params.time, // ALWAYS send time for GeoServer layers
             elevation: params.elevation
         })
@@ -1592,6 +1605,13 @@ document.addEventListener('DOMContentLoaded', function () {
                 console.log(`🚀 Auto-initializing default layer: ${defaultLayerId}`);
                 defaultCheckbox.click(); // Trigger native event pipeline
             }
+
+            // Auto-initialize GloFAS reporting points (uses its own time, no metadata needed)
+            const reportingPointsCheckbox = document.getElementById('checkbox-reportingPoints');
+            if (reportingPointsCheckbox && !reportingPointsCheckbox.checked) {
+                console.log('🚀 Auto-initializing default layer: reportingPoints');
+                reportingPointsCheckbox.click();
+            }
         }).catch(err => {
             // Fallback: init anyway even if metadata fails
             console.warn('⚠️ Metadata fetch failed, initializing layer with default time:', err);
@@ -1621,6 +1641,12 @@ document.addEventListener('DOMContentLoaded', function () {
 // newParams: { time?, elevation? } — only pass what changed
 // ─────────────────────────────────────────────────────────────────────────────
 function refreshLayerTiles(layerId, layerData, newParams = {}) {
+    // GloFAS layers with requiresTime manage their own time — ignore external time updates
+    const meta = layerData.metadata || (window.layerMetadata && window.layerMetadata[layerId]);
+    if (meta && meta.requiresTime && newParams.time !== undefined) {
+        delete newParams.time;
+    }
+
     // LAZY LOADING GUARD: If layer is hidden, only update state – don't send tile requests.
     // Tiles will be fetched automatically when the layer is shown again (addTo triggers reload).
     if (layerData.hidden) {

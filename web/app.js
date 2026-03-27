@@ -434,7 +434,23 @@ const layerMetadata = {
     'EGE_probRgt50': { type: 'glofas', hasElevation: false, wmsUrl: 'https://ows.globalfloods.eu/glofas-ows/ows.py', description: 'Precipitation probability > 50 mm' },
     'EGE_probRgt150': { type: 'glofas', hasElevation: false, wmsUrl: 'https://ows.globalfloods.eu/glofas-ows/ows.py', description: 'Precipitation probability > 150 mm' },
     'AccRainEGE': { type: 'glofas', hasElevation: false, wmsUrl: 'https://ows.globalfloods.eu/glofas-ows/ows.py', description: 'Accumulated precipitation' },
-    'FloodHazard100y': { type: 'glofas', hasElevation: false, wmsUrl: 'https://ows.globalfloods.eu/glofas-ows/ows.py', description: 'Flood hazard — 100 year return period (static)' }
+    'FloodHazard100y': { type: 'glofas', hasElevation: false, wmsUrl: 'https://ows.globalfloods.eu/glofas-ows/ows.py', description: 'Flood hazard — 100 year return period (static)' },
+    'reportingPoints': { type: 'glofas', hasElevation: false, wmsUrl: 'https://ows.globalfloods.eu/glofas-ows/ows.py', requiresTime: true, description: 'Reporting Points', legendHtml: `
+        <div style="font-size:11px;line-height:1.6;padding:2px 0;">
+            <div style="font-weight:600;margin-bottom:4px;color:var(--text-dim);">Flood Intensity</div>
+            <div style="display:flex;align-items:center;gap:7px;margin-bottom:3px;"><span style="width:11px;height:11px;border-radius:50%;background:#9333ea;flex-shrink:0;display:inline-block;"></span>20-year RP</div>
+            <div style="display:flex;align-items:center;gap:7px;margin-bottom:3px;"><span style="width:11px;height:11px;border-radius:50%;background:#ef4444;flex-shrink:0;display:inline-block;"></span>5-year RP</div>
+            <div style="display:flex;align-items:center;gap:7px;margin-bottom:3px;"><span style="width:11px;height:11px;border-radius:50%;background:#eab308;flex-shrink:0;display:inline-block;"></span>2-year RP</div>
+            <div style="display:flex;align-items:center;gap:7px;margin-bottom:8px;"><span style="width:11px;height:11px;border-radius:50%;background:#9ca3af;flex-shrink:0;display:inline-block;"></span>No flood signal</div>
+            <div style="font-weight:600;margin-bottom:4px;color:var(--text-dim);">Flood Tendency</div>
+            <div style="display:flex;align-items:center;gap:7px;margin-bottom:2px;"><span style="font-size:13px;">▲</span> Increasing trend</div>
+            <div style="display:flex;align-items:center;gap:7px;margin-bottom:2px;"><span style="font-size:13px;">▼</span> Decreasing trend</div>
+            <div style="display:flex;align-items:center;gap:7px;margin-bottom:8px;"><span style="font-size:13px;">●</span> No trend</div>
+            <div style="font-weight:600;margin-bottom:4px;color:var(--text-dim);">Flood Peak Timing</div>
+            <div style="display:flex;align-items:center;gap:7px;margin-bottom:3px;"><span style="font-size:13px;color:#111;">△</span> Peak days 1–3</div>
+            <div style="display:flex;align-items:center;gap:7px;margin-bottom:3px;"><span style="font-size:13px;color:#9ca3af;">△</span> Peak after day 3</div>
+            <div style="display:flex;align-items:center;gap:7px;"><span style="font-size:13px;color:#9ca3af;opacity:0.5;">▲</span> Peak after day 10</div>
+        </div>` }
 };
 
 // Debounce function
@@ -945,6 +961,13 @@ async function updateWMSParams() {
 
     // UI Updates
     if (window.showLoadingOverlay) window.showLoadingOverlay(); // Show spinner
+
+    // GloFAS layers with requiresTime manage their own time — skip global time update
+    if (metadata && metadata.requiresTime) {
+        if (window.hideLoadingOverlay) window.hideLoadingOverlay();
+        updateLayerInfo();
+        return;
+    }
 
     // Standard WMS: update only changed params
     const newParams = { time: currentParams.time };
