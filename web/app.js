@@ -962,15 +962,13 @@ async function updateWMSParams() {
     // UI Updates
     if (window.showLoadingOverlay) window.showLoadingOverlay(); // Show spinner
 
-    // GloFAS layers with requiresTime manage their own time — skip global time update
-    if (metadata && metadata.requiresTime) {
-        if (window.hideLoadingOverlay) window.hideLoadingOverlay();
-        updateLayerInfo();
-        return;
-    }
-
     // Standard WMS: update only changed params
-    const newParams = { time: currentParams.time };
+    // GloFAS requiresTime layers use date-only format (YYYY-MM-DDT00:00:00), not the global time string
+    let newTime = currentParams.time;
+    if (metadata && metadata.requiresTime && currentParams.time) {
+        newTime = currentParams.time.split('T')[0] + 'T00:00:00';
+    }
+    const newParams = { time: newTime };
     if (metadata && metadata.hasElevation) {
         newParams.elevation = currentParams.elevation;
     }
