@@ -86,6 +86,7 @@ def reharvest_mosaic(
         auth=auth,
         headers={"Content-Type": "text/plain"},
         data=mosaic_dir,
+        #data=f"file://{mosaic_dir}",
         timeout=300,
     )
     if r.status_code >= 300:
