@@ -778,7 +778,7 @@ function buildWMTSUrl(layerName, time, elevation) {
         `&TILEMATRIXSET=EPSG:900913` +
         `&TILEMATRIX=EPSG:900913:{z}` +
         `&TILEROW={y}&TILECOL={x}` +
-        `&FORMAT=image/png`;
+        `&FORMAT=image/png8`;
     if (time) url += `&TIME=${encodeURIComponent(time)}`;
     if (elevation !== undefined) url += `&ELEVATION=${elevation}`;
     return url;
@@ -824,9 +824,12 @@ async function initWMSLayer() {
     const metadata = layerMetadata[currentParams.layer];
     const isVideo = metadata && metadata.type === 'video';
 
+    // FIX #7: single isGwcLayer check, gwcLayers const removed (was declared but unused)
+    const isGwcLayer = ['twl75', 'epis_wl75'].includes(currentParams.layer);
+
     const wmsParams = {
         layers: `${WORKSPACE}:${currentParams.layer}`,
-        format: 'image/png',
+        format: isGwcLayer ? 'image/png8' : 'image/png',
         transparent: true,
         version: '1.3.0',
         time: currentParams.time
@@ -835,9 +838,6 @@ async function initWMSLayer() {
     if (metadata && metadata.hasElevation) {
         wmsParams.elevation = currentParams.elevation;
     }
-
-    // FIX #7: single isGwcLayer check, gwcLayers const removed (was declared but unused)
-    const isGwcLayer = ['twl75', 'epis_wl75'].includes(currentParams.layer);
 
     if (isGwcLayer) {
         wmsParams.tiled = true;
@@ -1213,7 +1213,7 @@ async function preloadFrame(day, updateProgress = null, zoomLevel = null) {
 
         const wmsParams = {
             layers: `${WORKSPACE}:${currentParams.layer}`,
-            format: 'image/png',
+            format: isGwcLayer ? 'image/png8' : 'image/png',
             transparent: true,
             version: '1.3.0',
             time: currentParams.time,
@@ -2100,19 +2100,6 @@ document.getElementById('time-select').addEventListener('change', (e) => {
     // Clear video caches so new TIME actually loads fresh frames
     if (currentMeta && currentMeta.type === 'video') {
         clearAnimationCacheForLayer(currentParams.layer);
-        // 🚀 PRELOAD: Start loading frames immediately in background so Play is instant
-        setTimeout(() => {
-            if (!window.isAnimating && !window.isAnimationLoading) {
-                console.log('🚀 [PRELOAD] Auto-preloading frames after TIME change...');
-                window.isAnimationLoading = true;
-                preloadAllFrames().then(() => {
-                    window.isAnimationLoading = false;
-                    console.log('✅ [PRELOAD] Background preload complete');
-                }).catch(() => {
-                    window.isAnimationLoading = false;
-                });
-            }
-        }, 500); // 500ms delay — čakáme kým sa aktualizuje base layer
     }
 
     // ✅ CRITICAL: Use debounced param update, NOT layer recreation
