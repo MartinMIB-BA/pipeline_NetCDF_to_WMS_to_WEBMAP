@@ -1,7 +1,7 @@
 // GeoServer configuration - AUTO DETECT ENVIRONMENT
 window.isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-const GEOSERVER_URL = window.isLocalhost ? 'http://localhost:8080' : '/geoserver';
-// const GEOSERVER_URL = window.isLocalhost ? 'http://89.47.190.36/geoserver' : '/geoserver';
+// const GEOSERVER_URL = window.isLocalhost ? 'http://localhost:8080' : '/geoserver';
+const GEOSERVER_URL = window.isLocalhost ? 'http://89.47.190.36/geoserver' : '/geoserver';
 
 const WORKSPACE = 'E_and_T';
 
@@ -1347,7 +1347,7 @@ async function preloadAllFrames() {
     };
 
     try {
-        const batchSize = 4;  // Utilize full proxy capacity (8 concurrent)
+        const batchSize = 16;  // Load all frames in one parallel batch
         // FIX #13: Derive totalFrames from layer metadata instead of hardcoding
         const elevationMax = (() => {
             const m = layerMetadata[currentParams.layer];
@@ -2100,6 +2100,19 @@ document.getElementById('time-select').addEventListener('change', (e) => {
     // Clear video caches so new TIME actually loads fresh frames
     if (currentMeta && currentMeta.type === 'video') {
         clearAnimationCacheForLayer(currentParams.layer);
+        // 🚀 PRELOAD: Start loading frames immediately in background so Play is instant
+        setTimeout(() => {
+            if (!window.isAnimating && !window.isAnimationLoading) {
+                console.log('🚀 [PRELOAD] Auto-preloading frames after TIME change...');
+                window.isAnimationLoading = true;
+                preloadAllFrames().then(() => {
+                    window.isAnimationLoading = false;
+                    console.log('✅ [PRELOAD] Background preload complete');
+                }).catch(() => {
+                    window.isAnimationLoading = false;
+                });
+            }
+        }, 500); // 500ms delay — čakáme kým sa aktualizuje base layer
     }
 
     // ✅ CRITICAL: Use debounced param update, NOT layer recreation
