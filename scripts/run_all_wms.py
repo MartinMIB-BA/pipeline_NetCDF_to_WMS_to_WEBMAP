@@ -153,8 +153,8 @@ def main():
             files_to_process.append((filename, file_url, source_url))
         
         if not files_to_process:
-            print("\n✅ All files already processed!")
-            return 0
+            print("\n✅ All files already processed — nothing to do.")
+            return 2  # exit code 2 = nothing new, skip seeding
         
         print(f"\n📋 Found {len(files_to_process)} file(s) to process\n")
     else:

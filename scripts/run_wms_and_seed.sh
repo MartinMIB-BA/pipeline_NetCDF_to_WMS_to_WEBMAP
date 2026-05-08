@@ -45,37 +45,63 @@ echo "========================================"
 } | tee -a "$LOG_FILE"
 
 WMS_OK=true
-if ! python "$SCRIPT_DIR/run_all_wms.py" --use-url 2>&1 | tee -a "$LOG_FILE"; then
+NOTHING_NEW=false
+python "$SCRIPT_DIR/run_all_wms.py" --use-url 2>&1 | tee -a "$LOG_FILE"
+WMS_EXIT=${PIPESTATUS[0]}
+
+if [ "$WMS_EXIT" -eq 2 ]; then
+    NOTHING_NEW=true
+elif [ "$WMS_EXIT" -ne 0 ]; then
     WMS_OK=false
 fi
 
 {
 echo ""
-echo "  WMS finished at $(date)  [status: $([ "$WMS_OK" = true ] && echo OK || echo FAILED)]"
+if [ "$NOTHING_NEW" = true ]; then
+    echo "  WMS finished at $(date)  [status: NOTHING NEW]"
+else
+    echo "  WMS finished at $(date)  [status: $([ "$WMS_OK" = true ] && echo OK || echo FAILED)]"
+fi
 echo "========================================"
 } | tee -a "$LOG_FILE"
 
 # ── Step 2: GWC Tile Seeding ────────────────────────────────────────────────
-{
-echo ""
-echo "========================================"
-echo "  GWC Tile Seeding Started: $(date)"
-echo "========================================"
-} | tee -a "$LOG_FILE"
-
 SEED_OK=true
-if ! python "$SCRIPT_DIR/seed_tiles.py" 2>&1 | tee -a "$LOG_FILE"; then
-    SEED_OK=false
+if [ "$NOTHING_NEW" = true ]; then
+    {
+    echo ""
+    echo "========================================"
+    echo "  GWC Tile Seeding: SKIPPED (no new files)"
+    echo "========================================"
+    } | tee -a "$LOG_FILE"
+elif [ "$WMS_OK" = true ]; then
+    {
+    echo ""
+    echo "========================================"
+    echo "  GWC Tile Seeding Started: $(date)"
+    echo "========================================"
+    } | tee -a "$LOG_FILE"
+
+    if ! python "$SCRIPT_DIR/seed_tiles.py" 2>&1 | tee -a "$LOG_FILE"; then
+        SEED_OK=false
+    fi
+
+    {
+    echo ""
+    echo "  Seeding finished at $(date)  [status: $([ "$SEED_OK" = true ] && echo OK || echo FAILED)]"
+    echo "========================================"
+    } | tee -a "$LOG_FILE"
 fi
 
-{
-echo ""
-echo "  Seeding finished at $(date)  [status: $([ "$SEED_OK" = true ] && echo OK || echo FAILED)]"
-echo "========================================"
-} | tee -a "$LOG_FILE"
-
 # ── Step 3: Send combined email ─────────────────────────────────────────────
-if [ "$WMS_OK" = true ] && [ "$SEED_OK" = true ]; then
+if [ "$NOTHING_NEW" = true ]; then
+    STATUS="success"
+    SUBJECT="WMS + Seed ($RUN_TIME) — nič nové ℹ️"
+    BODY="Na JRC serveri neboli žiadne nové súbory. Seeding preskočený.
+
+Server: $(hostname)
+Log: $LOG_FILE"
+elif [ "$WMS_OK" = true ] && [ "$SEED_OK" = true ]; then
     STATUS="success"
     SUBJECT="WMS + Seed ($RUN_TIME) — OK ✅"
     BODY="WMS processing and GWC tile seeding completed successfully at $(date).
@@ -85,7 +111,7 @@ Log: $LOG_FILE"
 elif [ "$WMS_OK" = false ]; then
     STATUS="failed"
     SUBJECT="WMS + Seed ($RUN_TIME) — WMS FAILED ❌"
-    BODY="WMS processing FAILED at $(date). Seeding was skipped or may have partial results.
+    BODY="WMS processing FAILED at $(date). Seeding was skipped.
 
 Server: $(hostname)
 Log: $LOG_FILE
