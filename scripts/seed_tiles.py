@@ -171,7 +171,7 @@ def gwc_kill_all(layer: str) -> None:
 # ─── Main logic ────────────────────────────────────────────────────────────────
 
 def run_seed(dry_run: bool = False, truncate_only: bool = False):
-    now   = datetime.datetime.utcnow()
+    now   = datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None)
     since = now - datetime.timedelta(days=SEED_DAYS)
     before = now - datetime.timedelta(days=PURGE_DAYS)
 
