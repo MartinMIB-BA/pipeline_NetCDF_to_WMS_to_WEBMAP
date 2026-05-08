@@ -87,6 +87,7 @@ def main():
     parser.add_argument("--no-cleanup", action="store_true", help="Don't cleanup geoserver_ready after each file")
     parser.add_argument("--stats", action="store_true", help="Show processing statistics and exit")
     parser.add_argument("--reset-file", metavar="FILENAME", help="Reset file status to allow reprocessing")
+    parser.add_argument("--skip-file", metavar="FILENAME", help="Mark file as skipped so it is excluded from automatic processing")
     parser.add_argument("--force-reprocess", action="store_true", help="Force reprocess all files (ignore tracking)")
     parser.add_argument("--no-tracking", action="store_true", help="Disable tracking system")
     args = parser.parse_args()
@@ -112,6 +113,12 @@ def main():
             print(f"✅ Reset file: {args.reset_file}")
         else:
             print(f"❌ File not found: {args.reset_file}")
+        return 0
+
+    if args.skip_file:
+        tracking.mark_file_skipped(args.skip_file, "Manually skipped — corrupted or unavailable source file")
+        print(f"⏭️  Skipped file: {args.skip_file}")
+        print(f"   (Use --reset-file to un-skip when the file is fixed on the source server)")
         return 0
     
     # Determine settings

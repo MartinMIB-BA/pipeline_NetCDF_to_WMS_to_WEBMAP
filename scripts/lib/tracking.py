@@ -183,6 +183,25 @@ def mark_file_failed(filename: str, error: str) -> None:
         """, (error, filename))
 
 
+def mark_file_skipped(filename: str, reason: str) -> None:
+    """
+    Mark file as permanently skipped (e.g., corrupted source file).
+    Skipped files are excluded from automatic retries just like 'success'.
+    Use reset_file_status() to un-skip when the file is fixed on the source server.
+    """
+    with get_db_cursor(commit=True) as cur:
+        cur.execute("""
+            INSERT INTO wms_processing_log
+                (filename, issue_timestamp, file_url, status, error_message)
+            VALUES (%s, 'unknown', NULL, 'skipped', %s)
+            ON CONFLICT (filename)
+            DO UPDATE SET
+                status = 'skipped',
+                error_message = EXCLUDED.error_message,
+                updated_at = NOW()
+        """, (filename, reason))
+
+
 def get_unprocessed_files(file_list: List[Tuple[str, str]]) -> List[Tuple[str, str]]:
     """
     Filter file list to only unprocessed files.
@@ -191,10 +210,10 @@ def get_unprocessed_files(file_list: List[Tuple[str, str]]) -> List[Tuple[str, s
         return []
     
     with get_db_cursor() as cur:
-        # Get all successfully processed files
+        # Get all successfully processed or skipped files
         cur.execute("""
-            SELECT filename FROM wms_processing_log 
-            WHERE status = 'success'
+            SELECT filename FROM wms_processing_log
+            WHERE status IN ('success', 'skipped')
         """)
         
         processed = {row[0] for row in cur.fetchall()}

@@ -74,7 +74,21 @@ def main():
     parser.add_argument("--dry-run",    action="store_true",       help="Only list files, do not download or process")
     parser.add_argument("--force",      action="store_true",       help="Re-process files already marked as success")
     parser.add_argument("--no-cleanup", action="store_true",       help="Keep GeoTIFFs after each file")
+    parser.add_argument("--skip-file",  metavar="FILENAME",         help="Mark file as skipped so it is excluded from processing")
     args = parser.parse_args()
+
+    # Handle --skip-file before anything else
+    if args.skip_file:
+        try:
+            print("🔧 Initializing tracking database...")
+            tracking.initialize_tracking_db()
+            tracking.mark_file_skipped(args.skip_file, "Manually skipped — corrupted or unavailable source file")
+            print(f"⏭️  Skipped file: {args.skip_file}")
+            print(f"   (Use --reset-file via run_all_wms.py to un-skip when the file is fixed)")
+        except Exception as e:
+            print(f"❌ Failed to skip file: {e}")
+            return 1
+        return 0
 
     periods = build_periods(args.year, args.from_month, args.to_month)
 

@@ -151,8 +151,8 @@ def iterate_files_in_periods(
             # Get all successfully processed filenames
             with tracking.get_db_cursor() as cur:
                 cur.execute("""
-                    SELECT filename FROM wms_processing_log 
-                    WHERE status = 'success'
+                    SELECT filename FROM wms_processing_log
+                    WHERE status IN ('success', 'skipped')
                 """)
                 processed_files = {row[0] for row in cur.fetchall()}
                 print(f"   ✅ Loaded {len(processed_files)} processed file(s)\n")
