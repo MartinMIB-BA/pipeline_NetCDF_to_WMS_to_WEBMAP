@@ -96,8 +96,8 @@ fi
 # ── Step 3: Send combined email ─────────────────────────────────────────────
 if [ "$NOTHING_NEW" = true ]; then
     STATUS="success"
-    SUBJECT="WMS + Seed ($RUN_TIME) — nič nové ℹ️"
-    BODY="Na JRC serveri neboli žiadne nové súbory. Seeding preskočený.
+    SUBJECT="WMS + Seed ($RUN_TIME) — nothing new ℹ️"
+    BODY="No new files found on JRC server. Seeding skipped.
 
 Server: $(hostname)
 Log: $LOG_FILE"
