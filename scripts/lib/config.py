@@ -15,7 +15,7 @@ def env(name: str, default: str) -> str:
 
 
 # GeoServer settings
-GEOSERVER_URL = env("GEOSERVER_URL", "http://89.47.190.36:8080/geoserver")
+GEOSERVER_URL = env("GEOSERVER_URL", "http://89.47.190.54:8080/geoserver")
 WORKSPACE = env("WORKSPACE", "E_and_T")
 GEOSERVER_USER = env("GEOSERVER_USER", "admin")
 GEOSERVER_PASSWORD = env("GEOSERVER_PASSWORD", "geoserver")

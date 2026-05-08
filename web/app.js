@@ -1,7 +1,7 @@
 // GeoServer configuration - AUTO DETECT ENVIRONMENT
 window.isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
 // const GEOSERVER_URL = window.isLocalhost ? 'http://localhost:8080' : '/geoserver';
-const GEOSERVER_URL = window.isLocalhost ? 'http://89.47.190.36/geoserver' : '/geoserver';
+const GEOSERVER_URL = window.isLocalhost ? 'http://89.47.190.54/geoserver' : '/geoserver';
 
 const WORKSPACE = 'E_and_T';
 
@@ -765,25 +765,6 @@ function attachWMSEvents() {
     });
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// WMTS HELPER – builds a GeoWebCache WMTS URL for Leaflet L.tileLayer
-// Uses Z/X/Y tile coordinates (no BBOX) → eliminates HTTP 400 from GWC
-// GridSet: EPSG:900913 (standard GeoServer GWC alias for EPSG:3857)
-// ─────────────────────────────────────────────────────────────────────────────
-function buildWMTSUrl(layerName, time, elevation) {
-    const base = `${GEOSERVER_URL}/gwc/service/wmts`;
-    let url = `${base}?SERVICE=WMTS&VERSION=1.0.0&REQUEST=GetTile` +
-        `&LAYER=${WORKSPACE}:${layerName}` +
-        `&STYLE=` +
-        `&TILEMATRIXSET=EPSG:900913` +
-        `&TILEMATRIX=EPSG:900913:{z}` +
-        `&TILEROW={y}&TILECOL={x}` +
-        `&FORMAT=image/png8`;
-    if (time) url += `&TIME=${encodeURIComponent(time)}`;
-    if (elevation !== undefined) url += `&ELEVATION=${elevation}`;
-    return url;
-}
-
 // Initialize WMS layer (called ONCE on page load)
 async function initWMSLayer() {
     console.log('🏗️  Initializing WMS layer...');
@@ -843,7 +824,6 @@ async function initWMSLayer() {
         wmsParams.tiled = true;
     }
 
-    //wmsLayer = L.tileLayer.wms(`${GEOSERVER_URL}/wms`, {
     // Direct GWC integration for video layers
     const endpoint = isGwcLayer ? `${GEOSERVER_URL}/gwc/service/wms` : `${GEOSERVER_URL}/wms`;
     wmsLayer = L.tileLayer.wms(endpoint, {
@@ -943,8 +923,6 @@ async function updateWMSParams() {
         console.warn('⚠️ updateWMSParams aborted: No active wmsLayer found.');
         return;
     }
-    console.warn("DEBUG updateWMSParams:", currentParams.layer, "time:", currentParams.time);
-
     // A param update is effectively a new "load cycle" as it invalidates old tiles
     currentLoadCycleId++;
     wmsLayer.loadCycleId = currentLoadCycleId;
@@ -954,10 +932,6 @@ async function updateWMSParams() {
     const isWmtsLayer = wmtsLayers.includes(currentParams.layer);
 
     console.log(`📝 Updating params (Cycle #${currentLoadCycleId})`);
-
-    // FIX #2: tileErrorCount/tileSuccessCount are now module-scoped, reset in 'loading' listener
-    // tileErrorCount = 0;
-    // tileSuccessCount = 0;
 
     // UI Updates
     if (window.showLoadingOverlay) window.showLoadingOverlay(); // Show spinner
