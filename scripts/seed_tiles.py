@@ -44,7 +44,6 @@ ZOOM_STOP   = 4
 GRID_SET_ID = "EPSG:900913x2"            # Web Mercator x2 — matches Leaflet/GWC default
 TILE_FORMAT = "image/png8"
 THREAD_COUNT = 2                         # parallel GWC threads per seed job
-SEED_DAYS   = 7                          # seed last N days
 PURGE_DAYS  = 7                          # truncate tiles older than N days
 
 AUTH = (GEOSERVER_USER, GEOSERVER_PASS)
@@ -58,19 +57,19 @@ def get_db_conn():
     )
 
 
-def get_time_values(layer: str, since: datetime.datetime) -> list[str]:
-    """Return distinct ISO TIME strings from PostGIS for the given layer since `since`."""
+def get_newest_time_value(layer: str) -> list[str]:
+    """Return the single most recent ISO TIME string from PostGIS for the given layer."""
     conn = get_db_conn()
     try:
         with conn.cursor() as cur:
             cur.execute(f"""
-                SELECT DISTINCT ingestion
+                SELECT MAX(ingestion)
                 FROM "{layer}"."{layer}"
-                WHERE ingestion >= %s
-                ORDER BY ingestion
-            """, (since,))
-            rows = cur.fetchall()
-        return [row[0].strftime("%Y-%m-%dT%H:%M:%S.000Z") for row in rows]
+            """)
+            row = cur.fetchone()
+        if row and row[0]:
+            return [row[0].strftime("%Y-%m-%dT%H:%M:%S.000Z")]
+        return []
     finally:
         conn.close()
 
@@ -171,8 +170,7 @@ def gwc_kill_all(layer: str) -> None:
 # ─── Main logic ────────────────────────────────────────────────────────────────
 
 def run_seed(dry_run: bool = False, truncate_only: bool = False):
-    now   = datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None)
-    since = now - datetime.timedelta(days=SEED_DAYS)
+    now    = datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None)
     before = now - datetime.timedelta(days=PURGE_DAYS)
 
     print(f"\n{'='*60}")
@@ -180,7 +178,7 @@ def run_seed(dry_run: bool = False, truncate_only: bool = False):
     print(f"  Mode     : {'DRY RUN' if dry_run else 'LIVE'}")
     print(f"  Layers   : {LAYERS}")
     print(f"  Zoom     : {ZOOM_START}–{ZOOM_STOP}")
-    print(f"  Seed last: {SEED_DAYS} days (since {since.strftime('%Y-%m-%d')})")
+    print(f"  Seed     : newest timestamp only")
     print(f"  Purge old: > {PURGE_DAYS} days (before {before.strftime('%Y-%m-%d')})")
     print(f"{'='*60}\n")
 
@@ -201,28 +199,28 @@ def run_seed(dry_run: bool = False, truncate_only: bool = False):
                 print(f"  ⚠️  Could not query ELEVATION values: {e}")
                 elevations = ["0"]
 
-            print(f"  🗑️  Truncating {len(old_times)} old TIME values × {len(elevations)} elevations...")
+            print(f"  🗑️  Truncating {len(old_times)} old TIME value(s) × {len(elevations)} elevation(s)...")
             truncated = 0
             for t in old_times:
                 for e in elevations:
                     if gwc_seed(layer, t, e, seed_type="truncate", dry_run=dry_run):
                         truncated += 1
-            print(f"  ✅ Truncated {truncated} combinations")
+            print(f"  ✅ Truncated {truncated} combination(s)")
         else:
             print(f"  ℹ️  No old tiles to truncate")
 
         if truncate_only:
             continue
 
-        # ── 2. Seed new tiles ──────────────────────────────────────────────
+        # ── 2. Seed only the newest timestamp ─────────────────────────────
         try:
-            new_times = get_time_values(layer, since)
+            new_times = get_newest_time_value(layer)
         except Exception as e:
-            print(f"  ⚠️  Could not query TIME values: {e}")
+            print(f"  ⚠️  Could not query newest TIME value: {e}")
             new_times = []
 
         if not new_times:
-            print(f"  ℹ️  No TIME values found in last {SEED_DAYS} days — skipping seed")
+            print(f"  ℹ️  No TIME values found — skipping seed")
             continue
 
         try:
@@ -231,21 +229,20 @@ def run_seed(dry_run: bool = False, truncate_only: bool = False):
             print(f"  ⚠️  Could not query ELEVATION values: {e}")
             elevations = ["0"]
 
-        total = len(new_times) * len(elevations)
-        print(f"  🌱 Seeding {len(new_times)} TIME values × {len(elevations)} elevations = {total} jobs")
-        print(f"     TIME range : {new_times[0]} → {new_times[-1]}")
+        newest = new_times[0]
+        total = len(elevations)
+        print(f"  🌱 Seeding newest TIME: {newest} × {len(elevations)} elevation(s) = {total} job(s)")
         print(f"     ELEVATIONs : {elevations}")
 
         seeded = 0
-        for t in new_times:
-            for elv in elevations:
-                if gwc_seed(layer, t, elv, seed_type="seed", dry_run=dry_run):
-                    seeded += 1
-                    sys.stdout.write(f"\r     Progress: {seeded}/{total}")
-                    sys.stdout.flush()
-                time.sleep(0.1)   # small delay to avoid overloading GWC queue
+        for elv in elevations:
+            if gwc_seed(layer, newest, elv, seed_type="seed", dry_run=dry_run):
+                seeded += 1
+                sys.stdout.write(f"\r     Progress: {seeded}/{total}")
+                sys.stdout.flush()
+            time.sleep(0.1)
 
-        print(f"\n  ✅ Submitted {seeded}/{total} seed jobs")
+        print(f"\n  ✅ Submitted {seeded}/{total} seed job(s)")
 
     print(f"\n{'='*60}")
     print("  Done. GWC is seeding tiles in the background.")
