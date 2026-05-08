@@ -196,7 +196,13 @@ def main() -> None:
             issue_dt12 = parse_issue_dt_12_from_nc(fn)
             path = os.path.join(args.input_dir, fn)
 
-            ds = xr.open_dataset(path, engine='netcdf4')
+            try:
+                ds = xr.open_dataset(path, engine='netcdf4')
+            except Exception as e:
+                print(f"\n  ⚠️  Cannot open {fn}: {e}")
+                print(f"  ⏭️  Skipping — file likely corrupted on source server.")
+                print(f"      Will retry automatically on next cron run.\n")
+                continue
 
             # [MAPPING UPDATE] Find which alias exists in this file
             valid_alias = None
