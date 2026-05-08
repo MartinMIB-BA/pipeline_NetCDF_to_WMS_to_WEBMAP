@@ -128,7 +128,6 @@ def build_arg_parser() -> argparse.ArgumentParser:
 
 def main() -> None:
     """Process static probability layers and upload to GeoServer."""
-    """Process static probability layers and upload to GeoServer."""
     args = build_arg_parser().parse_args()
     
     # [MAPPING UPDATE] Load variable mapping
@@ -197,9 +196,8 @@ def main() -> None:
             issue_dt12 = parse_issue_dt_12_from_nc(fn)
             path = os.path.join(args.input_dir, fn)
 
-            ds = xr.open_dataset(path)
-            ds = xr.open_dataset(path)
-            
+            ds = xr.open_dataset(path, engine='netcdf4')
+
             # [MAPPING UPDATE] Find which alias exists in this file
             valid_alias = None
             for alias in source_aliases:
