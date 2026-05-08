@@ -133,7 +133,8 @@ def gwc_seed(layer: str, time_val: str, elev_val: str, seed_type: str = "seed", 
             "parameters": {
                 "entry": [
                     {"string": ["TIME",      time_val]},
-                    {"string": ["ELEVATION", elev_val]}
+                    {"string": ["ELEVATION", elev_val]},
+                    {"string": ["STYLES",    "E_and_T:VIDEO_WMS"]}
                 ]
             }
         }
