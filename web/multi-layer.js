@@ -254,7 +254,7 @@ function syncLayerBubbleState() {
             if (toggleBtn && originalCheckbox) {
                 const isOn = !!originalCheckbox.checked;
                 toggleBtn.classList.toggle('active', isOn);
-                toggleBtn.innerHTML = isOn ? '<i class="fa-solid fa-eye"></i>' : '<i class="fa-solid fa-eye-slash"></i>';
+                toggleBtn.innerHTML = isOn ? '<i class="fa-solid fa-check"></i>' : '<i class="fa-solid fa-check" style="opacity: 0;"></i>';
                 toggleBtn.setAttribute('aria-pressed', isOn ? 'true' : 'false');
             }
         });
@@ -276,9 +276,9 @@ function initializeLayerBubbleBar() {
         layerIds.forEach(layerId => {
             const displayName = layerDisplayNames[layerId] || layerId;
             itemsHtml += `
-                <div class="layer-bubble-item">
+                <div class="layer-bubble-item" data-layer-id="${layerId}" style="cursor: pointer;">
                     <span class="layer-bubble-item-name">${displayName}</span>
-                    <button type="button" class="layer-bubble-toggle" id="bubble-toggle-${category.key}-${layerId}" data-layer-id="${layerId}" data-category="${category.key}" aria-pressed="false"><i class="fa-solid fa-eye-slash"></i></button>
+                    <button type="button" class="layer-bubble-toggle" id="bubble-toggle-${category.key}-${layerId}" data-category="${category.key}" aria-pressed="false" style="pointer-events: none;"><i class="fa-solid fa-check" style="opacity: 0;"></i></button>
                 </div>
             `;
         });
@@ -344,8 +344,8 @@ function initializeLayerBubbleBar() {
         if (openSlot) fitBubbleMenuToContent(openSlot);
     });
 
-    document.querySelectorAll('.layer-bubble-toggle').forEach(btn => {
-        btn.addEventListener('click', function (e) {
+    document.querySelectorAll('.layer-bubble-item').forEach(item => {
+        item.addEventListener('click', function (e) {
             e.preventDefault();
             e.stopPropagation();
 
