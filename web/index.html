@@ -19,34 +19,35 @@
 
     <style>
         /* ═══════════════════════════════════════════════════════════════
-           GEOENV MONITOR — HIGH-END GLASSMORPHISM DESIGN SYSTEM
+           COASTAL FORECASTER — PREMIUM GLASSMORPHISM DESIGN SYSTEM
+           Aligned with develop_new_UI palette
            ═══════════════════════════════════════════════════════════════ */
         :root {
-            --primary: #58ccff;
-            --primary-dim: rgba(88, 204, 255, 0.22);
-            --primary-glow: rgba(88, 204, 255, 0.38);
-            --primary-border: rgba(88, 204, 255, 0.36);
-            --accent: #3ddfb1;
-            --accent-glow: rgba(61, 223, 177, 0.34);
+            --primary: #60a5fa;
+            --primary-dim: rgba(59, 130, 246, 0.18);
+            --primary-glow: rgba(59, 130, 246, 0.45);
+            --primary-border: rgba(59, 130, 246, 0.28);
+            --accent: #06b6d4;
+            --accent-glow: rgba(6, 182, 212, 0.40);
             --warning: #fbbf24;
             --danger: #f87171;
-            --glass-bg: rgba(8, 13, 30, 0.84);
-            --glass-bg-light: rgba(255, 255, 255, 0.07);
-            --glass-border: rgba(255, 255, 255, 0.14);
-            --glass-blur: blur(20px);
-            --text-main: #f3f8ff;
-            --text-dim: #b8c7dc;
-            --text-faint: #6f829f;
-            --bg-deep: #060b19;
-            --bg-panel: rgba(8, 14, 30, 0.9);
-            --border: rgba(255, 255, 255, 0.14);
+            --glass-bg: rgba(8, 20, 45, 0.80);
+            --glass-bg-light: rgba(255, 255, 255, 0.05);
+            --glass-border: rgba(59, 130, 246, 0.14);
+            --glass-blur: blur(24px) saturate(150%);
+            --text-main: #f0f6ff;
+            --text-dim: #93c5fd;
+            --text-faint: #4b6fa5;
+            --bg-deep: #0a1628;
+            --bg-panel: rgba(8, 20, 45, 0.92);
+            --border: rgba(59, 130, 246, 0.14);
             /* Legacy aliases for JS-generated HTML */
-            --primary-color: #58ccff;
-            --secondary-color: #b0bfd3;
+            --primary-color: #60a5fa;
+            --secondary-color: #93c5fd;
             --accent-color: #f87171;
-            --bg-dark: rgba(8, 13, 30, 0.92);
-            --border-color: rgba(255, 255, 255, 0.14);
-            --text-secondary: #b8c7dc;
+            --bg-dark: rgba(8, 20, 45, 0.94);
+            --border-color: rgba(59, 130, 246, 0.14);
+            --text-secondary: #93c5fd;
             --success-color: #34d399;
             --warning-color: #fbbf24;
             --danger-color: #f87171;
@@ -72,7 +73,7 @@
             width: 100%;
             height: 100vh;
             z-index: 1;
-            background: #090d1a;
+            background: #08122a;
         }
 
         /* Tile artifact fix */
@@ -143,7 +144,7 @@
         }
 
         .layers-panel:hover {
-            box-shadow: 0 12px 50px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(56, 189, 248, 0.1) inset;
+            box-shadow: 0 12px 50px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(6, 182, 212, 0.15) inset;
         }
 
         .layers-panel-header {
@@ -264,11 +265,11 @@
             /* Responsive height fitting the screen */
             overflow-y: auto;
             z-index: 1200;
-            background: linear-gradient(180deg, rgba(10, 16, 34, 0.97), rgba(8, 12, 26, 0.97));
-            border: 1px solid rgba(56, 189, 248, 0.2);
+            background: linear-gradient(180deg, rgba(8, 20, 45, 0.97), rgba(10, 16, 34, 0.97));
+            border: 1px solid rgba(6, 182, 212, 0.2);
             border-radius: 12px;
             padding: 8px;
-            box-shadow: 0 12px 30px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(56, 189, 248, 0.08) inset;
+            box-shadow: 0 12px 30px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(6, 182, 212, 0.1) inset;
             backdrop-filter: blur(12px);
             transition: box-shadow 0.18s ease, border-color 0.18s ease, transform 0.14s ease;
             transform-origin: top center;
@@ -276,15 +277,15 @@
 
         .layer-bubble-slot.open .layer-bubble-menu {
             display: block;
-            border-color: rgba(56, 189, 248, 0.34);
-            box-shadow: 0 14px 34px rgba(0, 0, 0, 0.52), 0 0 0 1px rgba(56, 189, 248, 0.12) inset, 0 0 18px rgba(56, 189, 248, 0.16);
+            border-color: rgba(6, 182, 212, 0.4);
+            box-shadow: 0 14px 34px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(6, 182, 212, 0.15) inset, 0 0 18px rgba(6, 182, 212, 0.2);
             transform: translateY(0);
         }
 
         .active-layer-controls-card:hover {
-            border-color: rgba(56, 189, 248, 0.3);
+            border-color: rgba(6, 182, 212, 0.35);
             /* Zjemnený tieň pre aktívne vrstvy po vzore data vrstiev */
-            box-shadow: 0 0 12px rgba(56, 189, 248, 0.08);
+            box-shadow: 0 0 12px rgba(6, 182, 212, 0.12);
             transform: translateY(-1px);
         }
 
@@ -302,8 +303,8 @@
         }
 
         .layer-bubble-item:hover {
-            border-color: rgba(56, 189, 248, 0.22);
-            background: rgba(56, 189, 248, 0.08);
+            border-color: rgba(6, 182, 212, 0.22);
+            background: rgba(6, 182, 212, 0.08);
         }
 
         .layer-bubble-item:last-child {
@@ -335,10 +336,10 @@
         }
 
         .layer-bubble-toggle.active {
-            border-color: rgba(56, 189, 248, 0.6);
-            background: linear-gradient(180deg, rgba(56, 189, 248, 0.34), rgba(56, 189, 248, 0.2));
+            border-color: rgba(6, 182, 212, 0.6);
+            background: linear-gradient(180deg, rgba(6, 182, 212, 0.34), rgba(6, 182, 212, 0.2));
             color: #e0f2fe;
-            box-shadow: 0 2px 10px rgba(56, 189, 248, 0.3), 0 0 12px rgba(56, 189, 248, 0.22);
+            box-shadow: 0 2px 10px rgba(6, 182, 212, 0.3), 0 0 12px rgba(6, 182, 212, 0.22);
         }
 
         .layer-bubble-toggle:hover {
@@ -421,14 +422,14 @@
         }
 
         .layer-item:hover {
-            background: rgba(56, 189, 248, 0.06);
-            border-color: rgba(56, 189, 248, 0.15);
+            background: rgba(6, 182, 212, 0.06);
+            border-color: rgba(6, 182, 212, 0.15);
         }
 
         .layer-item.active {
             border-color: var(--primary-border);
             background: var(--primary-dim);
-            box-shadow: 0 0 12px rgba(56, 189, 248, 0.08);
+            box-shadow: 0 0 12px rgba(6, 182, 212, 0.12);
         }
 
         .layer-checkbox-row {
@@ -650,7 +651,7 @@
         .layer-control input[type="datetime-local"]:focus {
             outline: none;
             border-color: var(--primary-border);
-            box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.1);
+            box-shadow: 0 0 0 2px rgba(6, 182, 212, 0.1);
         }
 
         .layer-control-value {
@@ -678,12 +679,14 @@
 
         .glass-panel {
             position: relative;
-            background: var(--glass-bg);
-            backdrop-filter: var(--glass-blur);
-            -webkit-backdrop-filter: var(--glass-blur);
-            border: 1px solid var(--glass-border);
+            background: rgba(8, 20, 45, 0.82);
+            backdrop-filter: blur(28px) saturate(160%);
+            -webkit-backdrop-filter: blur(28px) saturate(160%);
+            border: 1px solid rgba(59, 130, 246, 0.16);
             border-radius: 20px;
-            box-shadow: 0 10px 50px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.04) inset;
+            box-shadow: 0 20px 60px -15px rgba(0,0,0,0.8),
+                        inset 0 1px 0 rgba(125, 180, 255, 0.07),
+                        0 0 40px -20px rgba(6, 182, 212, 0.25);
             padding: 7px 14px 9px;
             max-width: 280px;
             width: 100%;
@@ -713,7 +716,11 @@
             right: -1px;
             bottom: -1px;
             border-radius: 21px;
-            background: linear-gradient(135deg, rgba(56, 189, 248, 0.55), rgba(129, 140, 248, 0.4), rgba(52, 211, 153, 0.4), rgba(56, 189, 248, 0.55));
+            background: linear-gradient(135deg,
+                rgba(59, 130, 246, 0.6),
+                rgba(6, 182, 212, 0.45),
+                rgba(99, 102, 241, 0.4),
+                rgba(59, 130, 246, 0.6));
             background-size: 300% 300%;
             animation: border-flow 6s ease infinite;
             z-index: -1;
@@ -731,7 +738,8 @@
         }
 
         #bottom-glass-panel:hover {
-            box-shadow: 0 18px 64px rgba(0, 0, 0, 0.62), 0 0 0 1px rgba(56, 189, 248, 0.14) inset;
+            box-shadow: 0 20px 64px rgba(0, 0, 0, 0.7),
+                        inset 0 1px 0 rgba(59, 130, 246, 0.18);
         }
 
         .controls-grid {
@@ -789,7 +797,7 @@
 
         select:hover,
         input[type="datetime-local"]:hover {
-            border-color: rgba(56, 189, 248, 0.3);
+            border-color: rgba(6, 182, 212, 0.3);
         }
 
         select:focus,
@@ -797,7 +805,7 @@
             outline: none;
             border-color: var(--primary-border);
             background: rgba(8, 13, 30, 0.9);
-            box-shadow: 0 0 0 3px rgba(88, 204, 255, 0.16);
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.16);
         }
 
         option {
@@ -1090,11 +1098,11 @@
         }
 
         .active-layer-controls-card {
-            border: 1px solid rgba(56, 189, 248, 0.22);
+            border: 1px solid rgba(6, 182, 212, 0.22);
             border-radius: 12px;
             background: linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.025));
             padding: 12px;
-            box-shadow: 0 4px 14px rgba(0, 0, 0, 0.24), 0 0 0 1px rgba(56, 189, 248, 0.06) inset;
+            box-shadow: 0 4px 14px rgba(0, 0, 0, 0.24), 0 0 0 1px rgba(6, 182, 212, 0.06) inset;
         }
 
         .active-layer-controls-card.dragging {
@@ -1111,7 +1119,7 @@
             color: var(--primary);
             margin-bottom: 9px;
             padding-bottom: 8px;
-            border-bottom: 1px solid rgba(56, 189, 248, 0.2);
+            border-bottom: 1px solid rgba(6, 182, 212, 0.2);
             cursor: move;
         }
 
@@ -1304,7 +1312,7 @@
             display: flex;
             align-items: center;
             gap: 10px;
-            box-shadow: 0 8px 30px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(56, 189, 248, 0.08) inset;
+            box-shadow: 0 8px 30px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(6, 182, 212, 0.08) inset;
             animation: slideDown 0.3s ease;
             pointer-events: none;
         }
