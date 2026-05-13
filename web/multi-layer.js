@@ -254,7 +254,7 @@ function syncLayerBubbleState() {
             if (toggleBtn && originalCheckbox) {
                 const isOn = !!originalCheckbox.checked;
                 toggleBtn.classList.toggle('active', isOn);
-                toggleBtn.textContent = isOn ? 'ON' : 'OFF';
+                toggleBtn.innerHTML = isOn ? '<i class="fa-solid fa-eye"></i>' : '<i class="fa-solid fa-eye-slash"></i>';
                 toggleBtn.setAttribute('aria-pressed', isOn ? 'true' : 'false');
             }
         });
@@ -278,7 +278,7 @@ function initializeLayerBubbleBar() {
             itemsHtml += `
                 <div class="layer-bubble-item">
                     <span class="layer-bubble-item-name">${displayName}</span>
-                    <button type="button" class="layer-bubble-toggle" id="bubble-toggle-${category.key}-${layerId}" data-layer-id="${layerId}" data-category="${category.key}" aria-pressed="false">OFF</button>
+                    <button type="button" class="layer-bubble-toggle" id="bubble-toggle-${category.key}-${layerId}" data-layer-id="${layerId}" data-category="${category.key}" aria-pressed="false"><i class="fa-solid fa-eye-slash"></i></button>
                 </div>
             `;
         });

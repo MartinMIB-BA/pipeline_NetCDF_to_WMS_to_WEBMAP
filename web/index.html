@@ -795,6 +795,25 @@
             font-family: inherit;
         }
 
+        /* Stepper buttons */
+        .time-stepper-btn {
+            background: transparent;
+            border: none;
+            color: var(--primary);
+            cursor: pointer;
+            padding: 4px 6px;
+            border-radius: 4px;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .time-stepper-btn:hover {
+            background: var(--primary-dim);
+            color: #fff;
+        }
+
         select:hover,
         input[type="datetime-local"]:hover {
             border-color: rgba(6, 182, 212, 0.3);
@@ -1421,14 +1440,33 @@
                     <label for="time-select">
                         <i class="fa-regular fa-clock"></i> Time Window (UTC)
                     </label>
-                    <div style="display: flex; gap: 8px; width: 100%;">
-                        <input type="date" id="date-select"
-                            style="flex: 1; padding: 5px; border: 1px solid rgba(255,255,255,0.2); border-radius: 4px; background: rgba(0,0,0,0.3); color: white;">
-                        <select id="hour-select"
-                            style="width: 76px; padding: 5px; border: 1px solid rgba(255,255,255,0.2); border-radius: 4px; background: rgba(0,0,0,0.3); color: white;">
-                            <option value="00">00:00</option>
-                            <option value="12">12:00</option>
-                        </select>
+                    <div style="display: flex; flex-direction: column; gap: 6px; width: 100%;">
+                        <!-- Date Stepper -->
+                        <div style="display: flex; align-items: center; gap: 4px; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.2); border-radius: 6px; padding: 2px;">
+                            <button type="button" id="date-prev" class="time-stepper-btn" title="Previous Day">
+                                <i class="fa-solid fa-chevron-left"></i>
+                            </button>
+                            <input type="date" id="date-select"
+                                style="flex: 1; padding: 4px 2px; border: none; background: transparent; color: white; text-align: center; outline: none; font-size: 12px; font-weight: 500; font-family: inherit;">
+                            <button type="button" id="date-next" class="time-stepper-btn" title="Next Day">
+                                <i class="fa-solid fa-chevron-right"></i>
+                            </button>
+                        </div>
+                        
+                        <!-- Hour Stepper -->
+                        <div style="display: flex; align-items: center; gap: 4px; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.2); border-radius: 6px; padding: 2px;">
+                            <button type="button" id="hour-prev" class="time-stepper-btn" title="Previous Hour">
+                                <i class="fa-solid fa-chevron-left"></i>
+                            </button>
+                            <select id="hour-select"
+                                style="flex: 1; padding: 4px 2px; border: none; background: transparent; color: white; text-align: center; outline: none; font-size: 12px; font-weight: 500; font-family: inherit; appearance: none; -webkit-appearance: none;">
+                                <option value="00">00:00</option>
+                                <option value="12">12:00</option>
+                            </select>
+                            <button type="button" id="hour-next" class="time-stepper-btn" title="Next Hour">
+                                <i class="fa-solid fa-chevron-right"></i>
+                            </button>
+                        </div>
                     </div>
                     <!-- Hidden proxy input to maintain backwards compatibility with app.js listeners -->
                     <input type="hidden" id="time-select">

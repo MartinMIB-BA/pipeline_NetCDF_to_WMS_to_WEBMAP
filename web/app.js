@@ -1942,7 +1942,8 @@ function updateGlobalDateControlsForLayer(layerId, reason = '') {
     }
 
     const availableHours = window.wmsMetadata.getAvailableHoursForLayerDate(layerId, nextDate);
-    const hours = availableHours.length > 0 ? availableHours : ['00', '12'];
+    // User requested to ALWAYS have both 00:00 and 12:00 available regardless of parsed metadata availability
+    const hours = ['00', '12'];
 
     hourSelect.innerHTML = '';
     hours.forEach(h => {
@@ -2103,6 +2104,39 @@ function syncSplitDateToProxy() {
 }
 document.getElementById('date-select').addEventListener('change', syncSplitDateToProxy);
 document.getElementById('hour-select').addEventListener('change', syncSplitDateToProxy);
+
+// Stepper logic for Date/Time navigation
+document.getElementById('date-prev').addEventListener('click', () => {
+    const ds = document.getElementById('date-select');
+    if (!ds || !ds.value) return;
+    const d = new Date(ds.value);
+    d.setUTCDate(d.getUTCDate() - 1);
+    ds.value = d.toISOString().slice(0, 10);
+    syncSplitDateToProxy();
+});
+
+document.getElementById('date-next').addEventListener('click', () => {
+    const ds = document.getElementById('date-select');
+    if (!ds || !ds.value) return;
+    const d = new Date(ds.value);
+    d.setUTCDate(d.getUTCDate() + 1);
+    ds.value = d.toISOString().slice(0, 10);
+    syncSplitDateToProxy();
+});
+
+document.getElementById('hour-prev').addEventListener('click', () => {
+    const hs = document.getElementById('hour-select');
+    if (!hs) return;
+    hs.value = hs.value === '12' ? '00' : '12';
+    syncSplitDateToProxy();
+});
+
+document.getElementById('hour-next').addEventListener('click', () => {
+    const hs = document.getElementById('hour-select');
+    if (!hs) return;
+    hs.value = hs.value === '00' ? '12' : '00';
+    syncSplitDateToProxy();
+});
 
 // Initialize map and layer
 // initWMSLayer(); // DISABLED: Fixed ghost layer issue (conflict with multi-layer.js)
