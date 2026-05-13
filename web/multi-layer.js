@@ -71,10 +71,10 @@ const layerDisplayNames = {
 };
 
 const LAYER_BUBBLE_CATEGORIES = [
-    { key: 'static', label: 'RETURN PERIOD LAYERS', icon: 'fa-layer-group', type: 'static' },
-    { key: 'coastal', label: 'COASTAL and POINT DATA', icon: 'fa-location-dot', type: 'points' },
-    { key: 'video', label: 'FORECAST LAYERS', icon: 'fa-film', type: 'video' },
-    { key: 'glofas', label: 'GloFAS LAYERS', icon: 'fa-water', type: 'glofas' }
+    { key: 'static', label: 'RETURN PERIODS', icon: 'fa-layer-group', type: 'static' },
+    { key: 'coastal', label: 'COASTAL POINTS', icon: 'fa-location-dot', type: 'points' },
+    { key: 'video', label: 'FORECAST', icon: 'fa-film', type: 'video' },
+    { key: 'glofas', label: 'GloFAS', icon: 'fa-water', type: 'glofas' }
 ];
 
 function hasForecastDateLabel(metadata) {
@@ -130,9 +130,9 @@ function updateForecastRangeLabel(layerId, baseTimeIso = null) {
 function initializeLayerList() {
     const layersList = document.getElementById('layers-list');
 
-    // Group layers by category - 3 MAIN COLLAPSIBLE CATEGORIES
+    // Group layers by category - 4 MAIN COLLAPSIBLE CATEGORIES
     const groups = {
-        '🌊 Return Period Layers': [
+        '🌊 RETURN PERIODS': [
             // 10 year
             'probability_epis10y_1_1', 'probability_epis10y_1_3', 'probability_epis10y_1_15', 'probability_epis10y_4_15', 'probability_epis10y_10_15',
             'probability_twl10y_1_1', 'probability_twl10y_1_3', 'probability_twl10y_1_15', 'probability_twl10y_4_15', 'probability_twl10y_10_15',
@@ -143,14 +143,14 @@ function initializeLayerList() {
             'probability_epis500y_1_1', 'probability_epis500y_1_3', 'probability_epis500y_1_15', 'probability_epis500y_4_15', 'probability_epis500y_10_15',
             'probability_twl500y_1_1', 'probability_twl500y_1_3', 'probability_twl500y_1_15', 'probability_twl500y_4_15', 'probability_twl500y_10_15'
         ],
-        '📍 Coastal & Point Data': [
+        '📍 COASTAL POINTS': [
             'probability_epis_coast_01_15', 'probability_epis_coast_01_03', 'probability_epis_coast_04_15',
             'probability_twl_coast_01_15', 'probability_twl_coast_01_03', 'probability_twl_coast_04_15'
         ],
-        '🎥 Forecast Layers': [
+        '🎥 FORECAST': [
             'epis_wl75', 'twl75'
         ],
-        '🌐 GloFAS Layers': [
+        '🌐 GloFAS': [
             'RPGM', 'RPGH', 'RPGS',
             'sumAL41EGE', 'sumAL42EGE', 'sumAL43EGE', 'FloodSummary1_30',
             'EGE_probRgt50', 'EGE_probRgt150', 'AccRainEGE',
@@ -161,7 +161,7 @@ function initializeLayerList() {
     // Build HTML with collapsible groups
     let html = '';
     for (const [groupName, layers] of Object.entries(groups)) {
-        const isForecast = groupName === '🎥 Forecast Layers';
+        const isForecast = groupName === '🎥 FORECAST';
         const iconDir = isForecast ? '▼' : '▶';
         const collapseClass = isForecast ? '' : 'collapsed';
 
