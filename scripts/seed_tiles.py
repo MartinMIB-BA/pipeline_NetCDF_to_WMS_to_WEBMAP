@@ -57,19 +57,19 @@ def get_db_conn():
     )
 
 
-def get_newest_time_value(layer: str) -> list[str]:
-    """Return the single most recent ISO TIME string from PostGIS for the given layer."""
+def get_recent_time_values(layer: str, days: int = 7) -> list[str]:
+    """Return distinct ISO TIME strings from the last `days` days, newest first."""
     conn = get_db_conn()
     try:
         with conn.cursor() as cur:
             cur.execute(f"""
-                SELECT MAX(ingestion)
+                SELECT DISTINCT ingestion
                 FROM "{layer}"."{layer}"
+                WHERE ingestion >= NOW() - INTERVAL '{days} days'
+                ORDER BY ingestion DESC
             """)
-            row = cur.fetchone()
-        if row and row[0]:
-            return [row[0].strftime("%Y-%m-%dT%H:%M:%S.000Z")]
-        return []
+            rows = cur.fetchall()
+        return [row[0].strftime("%Y-%m-%dT%H:%M:%S.000Z") for row in rows]
     finally:
         conn.close()
 
@@ -169,7 +169,7 @@ def gwc_kill_all(layer: str) -> None:
 
 # ─── Main logic ────────────────────────────────────────────────────────────────
 
-def run_seed(dry_run: bool = False, truncate_only: bool = False):
+def run_seed(dry_run: bool = False, truncate_only: bool = False, days: int = 7):
     now    = datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None)
     before = now - datetime.timedelta(days=PURGE_DAYS)
 
@@ -178,7 +178,7 @@ def run_seed(dry_run: bool = False, truncate_only: bool = False):
     print(f"  Mode     : {'DRY RUN' if dry_run else 'LIVE'}")
     print(f"  Layers   : {LAYERS}")
     print(f"  Zoom     : {ZOOM_START}–{ZOOM_STOP}")
-    print(f"  Seed     : newest timestamp only")
+    print(f"  Seed     : last {days} day(s)")
     print(f"  Purge old: > {PURGE_DAYS} days (before {before.strftime('%Y-%m-%d')})")
     print(f"{'='*60}\n")
 
@@ -212,15 +212,15 @@ def run_seed(dry_run: bool = False, truncate_only: bool = False):
         if truncate_only:
             continue
 
-        # ── 2. Seed only the newest timestamp ─────────────────────────────
+        # ── 2. Seed last N days of timestamps ─────────────────────────────
         try:
-            new_times = get_newest_time_value(layer)
+            recent_times = get_recent_time_values(layer, days=days)
         except Exception as e:
-            print(f"  ⚠️  Could not query newest TIME value: {e}")
-            new_times = []
+            print(f"  ⚠️  Could not query recent TIME values: {e}")
+            recent_times = []
 
-        if not new_times:
-            print(f"  ℹ️  No TIME values found — skipping seed")
+        if not recent_times:
+            print(f"  ℹ️  No TIME values found in last {days} days — skipping seed")
             continue
 
         try:
@@ -229,18 +229,19 @@ def run_seed(dry_run: bool = False, truncate_only: bool = False):
             print(f"  ⚠️  Could not query ELEVATION values: {e}")
             elevations = ["0"]
 
-        newest = new_times[0]
-        total = len(elevations)
-        print(f"  🌱 Seeding newest TIME: {newest} × {len(elevations)} elevation(s) = {total} job(s)")
+        total = len(recent_times) * len(elevations)
+        print(f"  🌱 Seeding {len(recent_times)} TIME value(s) × {len(elevations)} elevation(s) = {total} job(s)")
+        print(f"     TIMEs      : {recent_times}")
         print(f"     ELEVATIONs : {elevations}")
 
         seeded = 0
-        for elv in elevations:
-            if gwc_seed(layer, newest, elv, seed_type="seed", dry_run=dry_run):
-                seeded += 1
-                sys.stdout.write(f"\r     Progress: {seeded}/{total}")
-                sys.stdout.flush()
-            time.sleep(0.1)
+        for t in recent_times:
+            for elv in elevations:
+                if gwc_seed(layer, t, elv, seed_type="seed", dry_run=dry_run):
+                    seeded += 1
+                    sys.stdout.write(f"\r     Progress: {seeded}/{total}")
+                    sys.stdout.flush()
+                time.sleep(0.1)
 
         print(f"\n  ✅ Submitted {seeded}/{total} seed job(s)")
 
@@ -256,6 +257,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Pre-seed GWC tiles for video WMS layers")
     parser.add_argument("--dry-run",       action="store_true", help="Print actions without sending requests")
     parser.add_argument("--truncate-only", action="store_true", help="Only truncate old tiles, skip seeding")
+    parser.add_argument("--days",          type=int, default=7,  help="How many days back to seed (default: 7)")
     args = parser.parse_args()
 
-    run_seed(dry_run=args.dry_run, truncate_only=args.truncate_only)
+    run_seed(dry_run=args.dry_run, truncate_only=args.truncate_only, days=args.days)
