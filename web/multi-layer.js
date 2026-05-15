@@ -335,7 +335,9 @@ function initializeLayerBubbleBar() {
         });
     });
 
-    document.addEventListener('click', function () {
+    document.addEventListener('click', function (e) {
+        // Do not close if the click originated inside the layer bubble bar
+        if (e.target.closest('#layer-bubble-bar')) return;
         closeAllMenus();
     });
 
@@ -344,27 +346,28 @@ function initializeLayerBubbleBar() {
         if (openSlot) fitBubbleMenuToContent(openSlot);
     });
 
-    document.querySelectorAll('.layer-bubble-item').forEach(item => {
-        item.addEventListener('click', function (e) {
-            e.preventDefault();
-            e.stopPropagation();
+    // Event delegation on wrap — catches ALL item clicks, even inside dynamically set innerHTML
+    wrap.addEventListener('click', function (e) {
+        const item = e.target.closest('.layer-bubble-item');
+        if (!item) return;
 
-            const layerId = this.getAttribute('data-layer-id');
-            if (!layerId) return;
+        e.stopPropagation(); // prevent document handler from closing the menu
 
-            const originalCheckbox = document.getElementById(`checkbox-${layerId}`);
-            if (!originalCheckbox) return;
+        const layerId = item.getAttribute('data-layer-id');
+        if (!layerId) return;
 
-            const shouldEnable = !originalCheckbox.checked;
-            if (shouldEnable && activeLayers.size >= MAX_LAYERS) {
-                alert(`Maximum ${MAX_LAYERS} layers allowed`);
-                return;
-            }
+        const originalCheckbox = document.getElementById(`checkbox-${layerId}`);
+        if (!originalCheckbox) return;
 
-            originalCheckbox.checked = shouldEnable;
-            originalCheckbox.dispatchEvent(new Event('change'));
-            syncLayerBubbleState();
-        });
+        const shouldEnable = !originalCheckbox.checked;
+        if (shouldEnable && activeLayers.size >= MAX_LAYERS) {
+            alert(`Maximum ${MAX_LAYERS} layers allowed`);
+            return;
+        }
+
+        originalCheckbox.checked = shouldEnable;
+        originalCheckbox.dispatchEvent(new Event('change'));
+        syncLayerBubbleState();
     });
 
     syncLayerBubbleState();
