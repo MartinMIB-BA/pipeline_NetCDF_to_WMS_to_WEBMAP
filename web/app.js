@@ -1196,10 +1196,10 @@ async function preloadFrame(day, updateProgress = null, zoomLevel = null) {
         if (isGwcLayer) {
             wmsParams.tiled = true;
             wmsParams.version = '1.1.1';
-            wmsParams.SRS = 'EPSG:900913';
-            wmsParams.srs = 'EPSG:900913'; // GWC parser needs lowercase srs in v1.1.1
-            // FIX: Leaflet translates crs objects into srs/crs param depending on version. 
-            // We must force the internal Leaflet CRS to EPSG3857 (which outputs as 900913 internally for v1.1.1)
+            wmsParams.SRS = 'EPSG:900913x2';
+            wmsParams.srs = 'EPSG:900913x2'; // GWC parser needs lowercase srs in v1.1.1
+            // FIX: Leaflet translates crs objects into srs/crs param depending on version.
+            // We must force the internal Leaflet CRS to EPSG3857 (which outputs as 900913x2 internally for v1.1.1)
         }
 
         // Direct GWC integration for video layers
