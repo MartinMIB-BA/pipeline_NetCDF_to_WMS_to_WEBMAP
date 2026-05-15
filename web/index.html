@@ -814,6 +814,31 @@
             color: #fff;
         }
 
+        .hour-toggle-btn {
+            flex: 1;
+            background: transparent;
+            border: none;
+            color: rgba(255,255,255,0.5);
+            cursor: pointer;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: 600;
+            font-family: monospace;
+            transition: all 0.2s;
+        }
+
+        .hour-toggle-btn:hover {
+            color: #fff;
+            background: rgba(59,130,246,0.2);
+        }
+
+        .hour-toggle-btn.hour-toggle-active {
+            background: linear-gradient(135deg, #3b82f6, #06b6d4);
+            color: #fff;
+            box-shadow: 0 0 10px rgba(6,182,212,0.4);
+        }
+
         select:hover,
         input[type="datetime-local"]:hover {
             border-color: rgba(6, 182, 212, 0.3);
@@ -1453,19 +1478,16 @@
                             </button>
                         </div>
                         
-                        <!-- Hour Stepper -->
+                        <!-- Hour Toggle -->
                         <div style="display: flex; align-items: center; gap: 4px; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.2); border-radius: 6px; padding: 2px;">
-                            <button type="button" id="hour-prev" class="time-stepper-btn" title="Previous Hour">
-                                <i class="fa-solid fa-chevron-left"></i>
-                            </button>
-                            <select id="hour-select"
-                                style="flex: 1; padding: 4px 2px; border: none; background: transparent; color: white; text-align: center; outline: none; font-size: 12px; font-weight: 500; font-family: inherit; appearance: none; -webkit-appearance: none;">
+                            <button type="button" id="hour-btn-00" class="hour-toggle-btn hour-toggle-active" data-hour="00" title="00:00 UTC">00:00</button>
+                            <button type="button" id="hour-btn-12" class="hour-toggle-btn" data-hour="12" title="12:00 UTC">12:00</button>
+                            <span style="padding: 2px 6px; font-size: 10px; color: rgba(255,255,255,0.5); font-family: inherit;">UTC</span>
+                            <!-- Hidden select kept for backwards compatibility with app.js listeners -->
+                            <select id="hour-select" style="display:none;">
                                 <option value="00">00:00</option>
                                 <option value="12">12:00</option>
                             </select>
-                            <button type="button" id="hour-next" class="time-stepper-btn" title="Next Hour">
-                                <i class="fa-solid fa-chevron-right"></i>
-                            </button>
                         </div>
                     </div>
                     <!-- Hidden proxy input to maintain backwards compatibility with app.js listeners -->
@@ -1493,10 +1515,10 @@
 
         <!-- Leaflet JS -->
         <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-        <script src="wms-metadata.js?v=18"></script>
-        <script src="app.js?v=18"></script>
-        <script src="multi-layer.js?v=18"></script>
-        <script src="ui-interactions.js?v=18"></script>
+        <script src="wms-metadata.js?v=24"></script>
+        <script src="app.js?v=24"></script>
+        <script src="multi-layer.js?v=24"></script>
+        <script src="ui-interactions.js?v=24"></script>
 
         <!-- Restore buttons (hidden by default) -->
         <button id="restore-layers-panel"

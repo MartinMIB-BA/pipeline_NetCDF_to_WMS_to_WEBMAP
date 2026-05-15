@@ -356,17 +356,30 @@ function initializeLayerBubbleBar() {
         const layerId = item.getAttribute('data-layer-id');
         if (!layerId) return;
 
-        const originalCheckbox = document.getElementById(`checkbox-${layerId}`);
-        if (!originalCheckbox) return;
+        // Determine current state from activeLayers (not from checkbox, which may not exist in DOM
+        // when the side panel is collapsed/hidden)
+        const isCurrentlyActive = activeLayers.has(layerId);
+        const shouldEnable = !isCurrentlyActive;
 
-        const shouldEnable = !originalCheckbox.checked;
         if (shouldEnable && activeLayers.size >= MAX_LAYERS) {
             alert(`Maximum ${MAX_LAYERS} layers allowed`);
             return;
         }
 
-        originalCheckbox.checked = shouldEnable;
-        originalCheckbox.dispatchEvent(new Event('change'));
+        // Directly call add/remove instead of relying on checkbox dispatch
+        if (shouldEnable) {
+            addLayer(layerId);
+        } else {
+            removeLayer(layerId);
+        }
+
+        // Keep the hidden-panel checkbox in sync if it exists
+        const originalCheckbox = document.getElementById(`checkbox-${layerId}`);
+        if (originalCheckbox) {
+            originalCheckbox.checked = shouldEnable;
+        }
+
+        updateLayerCount();
         syncLayerBubbleState();
     });
 
@@ -602,6 +615,12 @@ document.addEventListener('click', function (e) {
 function addLayer(layerId) {
     console.log('✅ Adding layer:', layerId);
 
+    // DUPLICATE GUARD: Prevent adding the same layer twice (causes zombie WMS tiles)
+    if (activeLayers.has(layerId)) {
+        console.warn(`⚠️ Layer ${layerId} is already active – skipping duplicate addLayer call.`);
+        return;
+    }
+
     const metadata = layerMetadata[layerId];
     if (!metadata) {
         console.error('No metadata for layer:', layerId);
@@ -625,14 +644,34 @@ function addLayer(layerId) {
         const indTime = document.getElementById(`time-${layerId}`);
         if (indTime) indTime.value = globalTime.value;
     } else {
-        // Do NOT fall back to getCurrentTimeUTC() — that would use today's date
-        // which may not be available on the server.
-        // The time-select input should have been pre-filled by the metadata fetch.
+        // The time-select input should normally be pre-filled by the metadata fetch.
         const timeInput = document.getElementById(`time-${layerId}`);
         initialTime = timeInput && timeInput.value && timeInput.value.length >= 16 ? timeInput.value + ':00.000Z' : null;
         if (!initialTime) {
-            console.warn(`⚠️ [addLayer] No time available yet for ${layerId}. Layer will wait for metadata.`);
+            // Fallbacks: existing app state, metadata-derived latest time, or current UTC
+            if (window.currentParams && window.currentParams.time) {
+                initialTime = window.currentParams.time;
+            }
+            if (!initialTime && window.wmsMetadata && typeof window.wmsMetadata.getLatestTimeForLayer === 'function') {
+                const latestISO = window.wmsMetadata.getLatestTimeForLayer(layerId)
+                    || window.wmsMetadata.getTimeExtent()?.maxDate?.toISOString();
+                if (latestISO) {
+                    initialTime = latestISO;
+                }
+            }
+            if (!initialTime && typeof getCurrentTimeUTC === 'function') {
+                initialTime = getCurrentTimeUTC();
+            }
+            if (initialTime) {
+                console.warn(`⚠️ [addLayer] Fallback time used for ${layerId}: ${initialTime}`);
+                const indTime = document.getElementById(`time-${layerId}`);
+                if (indTime) indTime.value = initialTime.slice(0, 16);
+            }
         }
+    }
+
+    if (metadata && metadata.type === 'static') {
+        initialTime = null;
     }
 
     let initialElevation = 0;
@@ -725,8 +764,8 @@ function addLayer(layerId) {
         transparent: true,
         version: '1.3.0',
         ...(isGlofas ? (glofasTime ? { time: glofasTime } : {}) : {
-            time: params.time, // ALWAYS send time for GeoServer layers
-            elevation: params.elevation
+            ...(params.time && metadata.type !== 'static' ? { time: params.time } : {}),
+            ...(metadata.hasElevation ? { elevation: params.elevation } : {})
         })
     };
 
@@ -757,7 +796,7 @@ function addLayer(layerId) {
         pane: 'baseWmsPane'  // FIX: always below animation frames (animWmsPane z=450)
     });
 
-    wmsLayer.addTo(map);
+    wmsLayer.addTo(window.map);
 
     // ═══════════════════════════════════════════════════════════════
     // ERROR TRACKING FOR NO DATA OVERLAY
@@ -869,15 +908,17 @@ function removeLayer(layerId) {
 
     // Remove from map
     if (window.map && window.map.hasLayer(layerData.wmsLayer)) {
-        map.removeLayer(layerData.wmsLayer);
+        window.map.removeLayer(layerData.wmsLayer);
     }
 
     // Safety check for any other attached layers (zombies)
-    map.eachLayer(layer => {
-        if (layer.wmsParams && layer.wmsParams.layers.includes(layerId)) {
-            map.removeLayer(layer);
-        }
-    });
+    if (window.map) {
+        window.map.eachLayer(layer => {
+            if (layer.wmsParams && layer.wmsParams.layers.includes(layerId)) {
+                window.map.removeLayer(layer);
+            }
+        });
+    }
 
     // Remove from active layers
     activeLayers.delete(layerId);
@@ -968,7 +1009,7 @@ function updateBottomPanelLayers() {
                         <div id="active-layer-legend-host-${layerId}"></div>
                     </div>
                 `;
-                panel.appendChild(card);
+                panel.prepend(card);
             }
 
             const body = document.getElementById(`active-layer-controls-body-${layerId}`);
@@ -1147,6 +1188,16 @@ function setLayerVisibility(layerId, visible) {
         if (window.map && window.map.hasLayer(layerData.wmsLayer)) {
             window.map.removeLayer(layerData.wmsLayer);
             console.log(`🚫 [LAZY] Layer ${layerId} removed from map (no tile requests)`);
+        }
+        // ZOMBIE CLEANUP: Remove any duplicate WMS layer instances left on the map
+        if (window.map) {
+            const layerName = layerData.metadata?.wmsUrl ? layerId : `${WORKSPACE}:${layerId}`;
+            window.map.eachLayer(layer => {
+                if (layer.wmsParams && layer.wmsParams.layers === layerName) {
+                    window.map.removeLayer(layer);
+                    console.log(`🧹 [ZOMBIE] Cleaned up duplicate instance of ${layerId}`);
+                }
+            });
         }
     } else {
         // Re-add to map – Leaflet will automatically fetch fresh tiles for current view
@@ -1562,7 +1613,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
     // 4. AUTO-INITIALIZE DEFAULT LAYER
     // ✅ FIXED: Wait for WMS metadata FIRST so we have the correct date range
-    //    before triggering addLayer (which reads getCurrentTimeUTC = today by default).
+    //   before triggering addLayer (which reads getCurrentTimeUTC = today by default).
     const defaultLayerId = 'epis_wl75';
     const defaultCheckbox = document.getElementById(`checkbox-${defaultLayerId}`);
 
@@ -1651,7 +1702,6 @@ function refreshLayerTiles(layerId, layerData, newParams = {}) {
     }
 
     // LAZY LOADING GUARD: If layer is hidden, only update state – don't send tile requests.
-    // Tiles will be fetched automatically when the layer is shown again (addTo triggers reload).
     if (layerData.hidden) {
         if (newParams.time !== undefined) layerData.time = newParams.time;
         if (newParams.elevation !== undefined) layerData.elevation = newParams.elevation;

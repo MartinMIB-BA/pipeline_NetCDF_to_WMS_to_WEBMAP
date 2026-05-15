@@ -1962,6 +1962,9 @@ function updateGlobalDateControlsForLayer(layerId, reason = '') {
     try {
         dateInput.value = nextDate;
         hourSelect.value = nextHour;
+        document.querySelectorAll('.hour-toggle-btn').forEach(btn => {
+            btn.classList.toggle('hour-toggle-active', btn.dataset.hour === nextHour);
+        });
     } finally {
         isSyncingDateControls = false;
     }
@@ -2045,12 +2048,8 @@ document.getElementById('time-select').addEventListener('change', (e) => {
     hours = hours >= 12 ? 12 : 0;
     targetDate.setUTCHours(hours, 0, 0, 0);
 
-    // Enforce API Bounds (Clamp to min/max available)
-    if (window.wmsMetadata && window.wmsMetadata.loaded) {
-        const { minDate, maxDate } = window.wmsMetadata.getTimeExtent();
-        if (minDate && targetDate < minDate) targetDate = new Date(minDate);
-        if (maxDate && targetDate > maxDate) targetDate = new Date(maxDate);
-    }
+    // API bounds enforcement is handled by updateGlobalDateControlsForLayer (dateInput.min/max)
+    // Skip hard clamping here — it blocked 12:00 when any non-video layer was first in activeLayers
 
     // Force snap the target date back onto the 12-hour grid securely
     hours = targetDate.getUTCHours();
@@ -2124,19 +2123,53 @@ document.getElementById('date-next').addEventListener('click', () => {
     syncSplitDateToProxy();
 });
 
-document.getElementById('hour-prev').addEventListener('click', () => {
+// Hour toggle buttons
+function setHour(h) {
     const hs = document.getElementById('hour-select');
     if (!hs) return;
-    hs.value = hs.value === '12' ? '00' : '12';
+    hs.value = h;
+    document.querySelectorAll('.hour-toggle-btn').forEach(btn => {
+        btn.classList.toggle('hour-toggle-active', btn.dataset.hour === h);
+    });
     syncSplitDateToProxy();
+}
+
+document.querySelectorAll('.hour-toggle-btn').forEach(btn => {
+    btn.addEventListener('click', () => setHour(btn.dataset.hour));
 });
 
-document.getElementById('hour-next').addEventListener('click', () => {
+// Keyboard arrow navigation: ← → = half-day, Shift+← Shift+→ = full day
+// Capture phase so this fires before Leaflet's keyboard pan handler
+document.addEventListener('keydown', (e) => {
+    if (e.target instanceof Element && e.target.closest('input, select, textarea')) return;
+    if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+    e.preventDefault();
+    e.stopPropagation();
+    const dir = e.key === 'ArrowRight' ? 1 : -1;
+    const ds = document.getElementById('date-select');
     const hs = document.getElementById('hour-select');
-    if (!hs) return;
-    hs.value = hs.value === '00' ? '12' : '00';
-    syncSplitDateToProxy();
-});
+    if (!ds || !ds.value || !hs) return;
+    if (e.shiftKey) {
+        const d = new Date(ds.value);
+        d.setUTCDate(d.getUTCDate() + dir);
+        ds.value = d.toISOString().slice(0, 10);
+        syncSplitDateToProxy();
+    } else {
+        if (dir === 1 && hs.value === '00') { setHour('12'); }
+        else if (dir === 1 && hs.value === '12') {
+            const d = new Date(ds.value);
+            d.setUTCDate(d.getUTCDate() + 1);
+            ds.value = d.toISOString().slice(0, 10);
+            setHour('00');
+        } else if (dir === -1 && hs.value === '12') { setHour('00'); }
+        else if (dir === -1 && hs.value === '00') {
+            const d = new Date(ds.value);
+            d.setUTCDate(d.getUTCDate() - 1);
+            ds.value = d.toISOString().slice(0, 10);
+            setHour('12');
+        }
+    }
+}, true);
 
 // Initialize map and layer
 // initWMSLayer(); // DISABLED: Fixed ghost layer issue (conflict with multi-layer.js)

@@ -11,7 +11,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         handle.addEventListener('pointerdown', (e) => {
             // Do not drag if clicking on a button inside the handle (like the minimize button)
-            if (e.target.closest('button, select, input, textarea, label, option')) return;
+            if (e.target.closest('button, select, input, textarea, label, option, #layer-bubble-bar')) return;
 
             pendingDrag = true;
             isDragging = false;
