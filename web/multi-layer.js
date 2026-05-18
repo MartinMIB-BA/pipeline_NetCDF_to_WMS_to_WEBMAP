@@ -887,6 +887,15 @@ function addLayer(layerId) {
     console.log(`✅ Layer ${layerId} added. Active layers: ${activeLayers.size}`);
     updateBottomPanelLayers();
     syncLayerBubbleState();
+
+    // Auto-preload all frames for video layers so slider works instantly without pressing play
+    if (isVideo && window.autoPreloadVideoLayer) {
+        setTimeout(() => {
+            if (activeLayers.has(layerId) && !window.isAnimating && !window.isAnimationLoading) {
+                window.autoPreloadVideoLayer(layerId);
+            }
+        }, 1500);
+    }
 }
 
 // Remove a layer
@@ -1301,6 +1310,33 @@ function attachLayerControlListeners(layerId) {
                 window.stopAnimation();
             }
 
+            // 1b. Instant cache-hit swap for video layers (no debounce needed when cache is warm)
+            if (layerData.metadata && layerData.metadata.type === 'video' && window.animationCache && !window.isAnimating) {
+                const animZoom = Math.round(window.map.getZoom());
+                const gwcLayers = ['twl75', 'epis_wl75'];
+                const fixedZoom = (gwcLayers.includes(layerId) && animZoom >= 6) ? 6 : animZoom;
+                const cacheKey = `${layerId}-${newVal}-${fixedZoom}`;
+                if (window.animationCache[cacheKey]) {
+                    const targetLayer = window.animationCache[cacheKey];
+                    Object.values(window.animationCache).forEach(layer => {
+                        if (layer && layer !== targetLayer && window.map && window.map.hasLayer(layer)) {
+                            layer.setOpacity(0);
+                        }
+                    });
+                    if (window.map && !window.map.hasLayer(targetLayer)) {
+                        targetLayer.setOpacity(0);
+                        targetLayer.addTo(window.map);
+                    }
+                    targetLayer.setOpacity(1.0);
+                    layerData.elevation = newVal;
+                    if (window.updateLayerInfo && window.currentParams && window.currentParams.layer === layerId) {
+                        window.currentParams.elevation = newVal;
+                        window.updateLayerInfo();
+                    }
+                    return; // Cache hit handled — skip debounced network request
+                }
+            }
+
             // 2. Debounce WMS Request
             debouncedIndividualElevationUpdate(layerId, newVal);
         });
@@ -1614,7 +1650,7 @@ document.addEventListener('DOMContentLoaded', function () {
     // 4. AUTO-INITIALIZE DEFAULT LAYER
     // ✅ FIXED: Wait for WMS metadata FIRST so we have the correct date range
     //   before triggering addLayer (which reads getCurrentTimeUTC = today by default).
-    const defaultLayerId = 'epis_wl75';
+    const defaultLayerId = 'twl75';
     const defaultCheckbox = document.getElementById(`checkbox-${defaultLayerId}`);
 
     if (defaultCheckbox) {
@@ -1654,17 +1690,17 @@ document.addEventListener('DOMContentLoaded', function () {
                 }
             }
 
-            // Now trigger the default layer load (it reads the time-select we just set)
-            if (defaultCheckbox && !defaultCheckbox.checked) {
-                console.log(`🚀 Auto-initializing default layer: ${defaultLayerId}`);
-                defaultCheckbox.click(); // Trigger native event pipeline
-            }
-
-            // Auto-initialize GloFAS reporting points (uses its own time, no metadata needed)
+            // Auto-initialize GloFAS reporting points first so twl75 ends up on top of the panel
             const reportingPointsCheckbox = document.getElementById('checkbox-reportingPoints');
             if (reportingPointsCheckbox && !reportingPointsCheckbox.checked) {
                 console.log('🚀 Auto-initializing default layer: reportingPoints');
                 reportingPointsCheckbox.click();
+            }
+
+            // Now trigger the default layer load (it reads the time-select we just set)
+            if (defaultCheckbox && !defaultCheckbox.checked) {
+                console.log(`🚀 Auto-initializing default layer: ${defaultLayerId}`);
+                defaultCheckbox.click(); // Trigger native event pipeline
             }
         }).catch(err => {
             // Fallback: init anyway even if metadata fails

@@ -1422,6 +1422,48 @@ async function preloadAllFrames() {
     }
 }
 
+window.preloadAllFrames = preloadAllFrames;
+
+// Auto-preload all frames for a specific video layer without disturbing currentParams permanently
+window.autoPreloadVideoLayer = async function (layerId, _retryCount = 0) {
+    if (window.isAnimating || window.isAnimationLoading) return;
+    const metadata = layerMetadata[layerId];
+    if (!metadata || metadata.type !== 'video') return;
+
+    // Play button must exist in DOM — if not, retry up to 3 times with 500ms delay
+    const playBtn = document.getElementById(`play-btn-${layerId}`);
+    if (!playBtn) {
+        if (_retryCount < 3) {
+            setTimeout(() => window.autoPreloadVideoLayer(layerId, _retryCount + 1), 500);
+        }
+        return;
+    }
+
+    const layerData = window.activeLayers && window.activeLayers.get(layerId);
+    if (!layerData) return;
+
+    const prevLayer = currentParams.layer;
+    const prevTime = currentParams.time;
+    const prevElevation = currentParams.elevation;
+
+    currentParams.layer = layerId;
+    currentParams.time = layerData.time;
+    currentParams.elevation = layerData.elevation;
+    window.isAnimationLoading = true;
+
+    try {
+        await preloadAllFrames();
+    } finally {
+        window.isAnimationLoading = false;
+        // Restore only if user hasn't manually switched layer in the meantime
+        if (currentParams.layer === layerId) {
+            currentParams.layer = prevLayer || layerId;
+            currentParams.time = prevTime;
+            currentParams.elevation = prevElevation;
+        }
+    }
+};
+
 async function startAnimation(skipPreload = false) {
     if (window.isAnimating) {
         console.warn('⚠️ Animation already running');
@@ -1725,17 +1767,23 @@ function stopAnimation() {
             }
         }
 
-        // Remove cached animation layers from map (cache object preserved for re-play).
-        // If we just stop, we want Day 0 to be visible, so we must remove ALL animated frames
-        // including the last visible one, because the base wmsLayer will now show Day 0.
+        // Hide cached animation layers (set opacity 0) but keep them on map.
+        // This preserves the Leaflet tile DOM elements so scrubbing the slider after Stop
+        // is instant (opacity toggle) instead of slow (re-add → tile reload from browser cache).
+        // The base wmsLayer (day 0, z=350) shows through because animated frames (z=450) are at opacity 0.
         if (window.animationCache) {
             Object.values(window.animationCache).forEach(layer => {
                 try {
-                    if (layer && window.map && window.map.hasLayer(layer)) {
-                        window.map.removeLayer(layer);
+                    if (layer && window.map) {
+                        if (window.map.hasLayer(layer)) {
+                            layer.setOpacity(0);
+                        } else {
+                            layer.setOpacity(0);
+                            layer.addTo(window.map);
+                        }
                     }
                 } catch (e) {
-                    console.warn('Could not remove cached layer on stop', e);
+                    console.warn('Could not hide cached layer on stop', e);
                 }
             });
         }
@@ -1941,9 +1989,23 @@ function updateGlobalDateControlsForLayer(layerId, reason = '') {
         nextDate = findClosestDate(currentDate, dates) || dates[dates.length - 1];
     }
 
-    const availableHours = window.wmsMetadata.getAvailableHoursForLayerDate(layerId, nextDate);
-    // User requested to ALWAYS have both 00:00 and 12:00 available regardless of parsed metadata availability
+    const rawAvailableHours = window.wmsMetadata.getAvailableHoursForLayerDate(layerId, nextDate);
     const hours = ['00', '12'];
+
+    // parseDurationToMs can't parse months/weeks (e.g. P4M1W2DT8H) → falls back to 24h step
+    // → only ["00"] returned for every date. Apply smart fallback:
+    // non-last dates always have both hours; last date: check actual latest time.
+    let availableHours = rawAvailableHours;
+    if (rawAvailableHours.length <= 1) {
+        const isLastDate = dates[dates.length - 1] === nextDate;
+        if (isLastDate) {
+            const latestTime = window.wmsMetadata.getLatestTimeForLayer(layerId);
+            const lastHour = latestTime ? new Date(latestTime).getUTCHours() : 0;
+            availableHours = lastHour < 12 ? ['00'] : ['00', '12'];
+        } else {
+            availableHours = ['00', '12'];
+        }
+    }
 
     hourSelect.innerHTML = '';
     hours.forEach(h => {
@@ -1953,8 +2015,11 @@ function updateGlobalDateControlsForLayer(layerId, reason = '') {
         hourSelect.appendChild(opt);
     });
 
+    // Snap to available hour if current hour is not available for this date
     let nextHour = currentHour;
-    if (!hours.includes(currentHour)) {
+    if (availableHours.length > 0 && !availableHours.includes(nextHour)) {
+        nextHour = availableHours[0];
+    } else if (!hours.includes(nextHour)) {
         nextHour = hours[0];
     }
 
@@ -1963,7 +2028,11 @@ function updateGlobalDateControlsForLayer(layerId, reason = '') {
         dateInput.value = nextDate;
         hourSelect.value = nextHour;
         document.querySelectorAll('.hour-toggle-btn').forEach(btn => {
-            btn.classList.toggle('hour-toggle-active', btn.dataset.hour === nextHour);
+            const btnHour = btn.dataset.hour;
+            const isAvailable = availableHours.length === 0 || availableHours.includes(btnHour);
+            btn.disabled = !isAvailable;
+            btn.classList.toggle('hour-toggle-active', btnHour === nextHour);
+            btn.classList.toggle('hour-toggle-disabled', !isAvailable);
         });
     } finally {
         isSyncingDateControls = false;
@@ -2074,6 +2143,14 @@ document.getElementById('time-select').addEventListener('change', (e) => {
     // Clear video caches so new TIME actually loads fresh frames
     if (currentMeta && currentMeta.type === 'video') {
         clearAnimationCacheForLayer(currentParams.layer);
+        // Auto re-preload so the slider stays smooth without requiring Play
+        const layerToPreload = currentParams.layer;
+        setTimeout(() => {
+            if (window.autoPreloadVideoLayer && !window.isAnimating && !window.isAnimationLoading
+                    && window.activeLayers && window.activeLayers.has(layerToPreload)) {
+                window.autoPreloadVideoLayer(layerToPreload);
+            }
+        }, 600);
     }
 
     // ✅ CRITICAL: Use debounced param update, NOT layer recreation
