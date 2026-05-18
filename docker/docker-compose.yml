@@ -57,6 +57,7 @@ services:
       - /opt/geoserver/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
       - /opt/geoserver/monitoring/nginx_logs:/var/log/nginx
       - /etc/letsencrypt:/etc/letsencrypt:ro
+      - /opt/geoserver/data/nginx_cache:/var/cache/nginx/gwc_cache
     restart: unless-stopped
     
   pgbouncer:
