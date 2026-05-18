@@ -1387,6 +1387,8 @@ async function preloadAllFrames() {
             // ABORT CHECK: Verify if we should still be loading
             if (!window.isAnimationLoading) {
                 console.warn('🛑 Preloading ABORTED by user');
+                playBtn.innerHTML = originalText;
+                playBtn.disabled = false;
                 return false;
             }
 
@@ -1399,6 +1401,8 @@ async function preloadAllFrames() {
             // SECOND ABORT CHECK: Check again after delay
             if (!window.isAnimationLoading) {
                 console.warn('🛑 Preloading ABORTED by user');
+                playBtn.innerHTML = originalText;
+                playBtn.disabled = false;
                 return false;
             }
         }
@@ -1461,6 +1465,14 @@ window.autoPreloadVideoLayer = async function (layerId, _retryCount = 0) {
             currentParams.time = prevTime;
             currentParams.elevation = prevElevation;
         }
+        // Ensure the button is never left in a broken state after auto-preload
+        if (!window.isAnimating) {
+            const btn = document.getElementById(`play-btn-${layerId}`);
+            if (btn) {
+                btn.innerHTML = '<i class="fa-solid fa-play"></i> Play';
+                btn.disabled = false;
+            }
+        }
     }
 };
 
@@ -1470,10 +1482,12 @@ async function startAnimation(skipPreload = false) {
         return;
     }
 
-    // RACE CONDITION FIX: Prevent multiple clicks while loading
+    // If background auto-preload is running, abort it and take over with Play
     if (window.isAnimationLoading) {
-        console.warn('⚠️ Animation is already loading, ignoring click');
-        return;
+        console.log('⚡ Play clicked during auto-preload — aborting background load, taking over');
+        window.isAnimationLoading = false;
+        // Give the abort check one tick to fire and restore the button before we proceed
+        await new Promise(r => setTimeout(r, 20));
     }
 
     const metadata = layerMetadata[currentParams.layer];
@@ -2085,17 +2099,13 @@ document.getElementById('time-select').addEventListener('change', (e) => {
 
     const currentMeta = layerMetadata[currentParams.layer];
 
-    // STICT VIDEO RESET: If the layer is a video, changing the date must reset the 
-    // frame to Day 0 regardless of whether it is currently animating or stopped.
-    if (currentMeta && currentMeta.type === 'video') {
-        console.log('🔄 Time changed on a video layer. Forcing reset to Day 0.');
+    // Stop animation/preload only when actually running — calling stopAnimation() when idle
+    // sets isAnimationLoading=false which aborts any background auto-preload.
+    if (window.isAnimating || window.isAnimationLoading) {
+        console.log('🔄 Time changed while playing/loading. Stopping.');
         if (typeof window.stopAnimation === 'function') {
             window.stopAnimation();
         }
-    } else if (window.isAnimating) {
-        // Stop animation if currently playing for non-video layers (safety catch)
-        console.log('⏸️ Stopping animation due to time change');
-        stopAnimation();
     }
 
     // Parse the datetime-local value as UTC
