@@ -2306,22 +2306,53 @@ map.on('zoomstart', function () {
 });
 
 map.on('zoomend', function () {
-    console.log(`🔍 Zoom level: ${map.getZoom()}`);
+    const newZoom = map.getZoom();
+    console.log(`🔍 Zoom level: ${newZoom}`);
+
+    // Evict animationCache entries for zoom levels no longer needed (keep current ±1)
+    const gwcLayers = ['twl75', 'epis_wl75'];
+    if (window.animationCache) {
+        const roundedZoom = Math.round(newZoom);
+        const fixedZoom = (roundedZoom >= 6) ? 6 : roundedZoom;
+        Object.keys(window.animationCache).forEach(key => {
+            const parts = key.split('-');
+            const cachedZoom = parseInt(parts[parts.length - 1]);
+            if (!isNaN(cachedZoom) && Math.abs(cachedZoom - fixedZoom) > 1) {
+                const layer = window.animationCache[key];
+                try {
+                    if (layer && window.map && window.map.hasLayer(layer)) {
+                        window.map.removeLayer(layer);
+                    }
+                } catch (e) {}
+                delete window.animationCache[key];
+            }
+        });
+    }
 
     if (wmsLayer && map.hasLayer(wmsLayer)) {
         setTimeout(() => {
-            // console.log('🔄 [ZOOM FIX] Forcing WMS layer redraw');
-            // wmsLayer.redraw();
-
-            // 🔥 PRIDANÝ PRE-WARM:
-            // Ak nebeží animácia, okamžite načítaj aktuálny snímok pre nový zoom level
             if (!window.isAnimating && currentParams.layer) {
                 console.log('🔥 [PRE-WARM] Preloading current frame for new zoom level');
                 window.preloadSingleFrame(currentParams.layer, currentParams.elevation);
             }
-
-            console.log('✅ WMS layer refreshed for zoom level', map.getZoom());
+            console.log('✅ WMS layer refreshed for zoom level', newZoom);
         }, 100);
+    }
+
+    // Re-preload all video frames for the new zoom so slider stays smooth after zooming
+    if (!window.isAnimating && !window.isAnimationLoading && window.autoPreloadVideoLayer) {
+        setTimeout(() => {
+            if (window.activeLayers) {
+                window.activeLayers.forEach((layerData, layerId) => {
+                    if (layerData.metadata && layerData.metadata.type === 'video'
+                            && gwcLayers.includes(layerId)
+                            && !window.isAnimating && !window.isAnimationLoading) {
+                        console.log(`🔄 [ZOOM] Re-preloading ${layerId} for zoom ${Math.round(newZoom)}`);
+                        window.autoPreloadVideoLayer(layerId);
+                    }
+                });
+            }
+        }, 400);
     }
 });
 
