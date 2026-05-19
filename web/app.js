@@ -5,6 +5,11 @@ const GEOSERVER_URL = window.isLocalhost ? 'http://89.47.190.54/geoserver' : '/g
 
 const WORKSPACE = 'E_and_T';
 
+// GWC gridset EPSG:900913x2 is pre-seeded only for zoom 2-4.
+// Zoom 5+ tiles are rendered on-the-fly by GeoServer from TIFFs.
+const GWC_MAX_SEEDED_ZOOM = 4;
+const GWC_LAYERS = ['twl75', 'epis_wl75'];
+
 // ═══════════════════════════════════════════════════════════════
 // SERVER PROTECTION: Prevent accidental GeoServer overload
 // ═══════════════════════════════════════════════════════════════
@@ -1116,8 +1121,8 @@ window.clearAnimationCacheForLayer = clearAnimationCacheForLayer;
 window.preloadSingleFrame = async function (layerId, elevation) {
     // FIX #3: Round zoom to match preloadFrame cacheKey generation
     const zoom = Math.round(map.getZoom());
-    // FIX #3: Apply same GWC zoom cap as preloadAllFrames
-    const fixedZoom = (['twl75', 'epis_wl75'].includes(layerId) && zoom >= 6) ? 6 : zoom;
+    // Cap zoom at 6 for GWC layers — zoom 5-6 rendered on-the-fly, 7+ shares same cache entry
+    const fixedZoom = (GWC_LAYERS.includes(layerId) && zoom >= 6) ? 6 : zoom;
     const cacheKey = `${layerId}-${elevation}-${fixedZoom}`;
 
     if (animationCache[cacheKey]) {
@@ -1284,7 +1289,7 @@ async function preloadFrame(day, updateProgress = null, zoomLevel = null) {
 
 
 // Animation control functions - OPTIMIZED with parallel batch loading
-async function preloadAllFrames() {
+async function preloadAllFrames(forceAllFrames = false) {
     const metadata = layerMetadata[currentParams.layer];
     if (!metadata || metadata.type !== 'video') {
         return false;
@@ -1333,11 +1338,16 @@ async function preloadAllFrames() {
         let currentZoom = map ? map.getZoom() : (typeof window.map !== 'undefined' ? window.map.getZoom() : 5);
         currentZoom = Math.round(currentZoom);
 
-        // FIX PRELOAD: For high zoom levels (>= 6) on GWC layers, adjust the preload zoom
-        const gwcLayersFix = ['twl75', 'epis_wl75'];
-        if (gwcLayersFix.includes(currentParams.layer) && currentZoom >= 6) {
+        // Cap zoom at 6 — zoom 7+ shares same GWC on-the-fly rendering as zoom 6
+        const isGwcLayer = GWC_LAYERS.includes(currentParams.layer);
+        if (isGwcLayer && currentZoom >= 6) {
             currentZoom = 6;
         }
+
+        // Pre-seeded zoom (2-4): all 16 frames are in GWC → ~400ms with warm Nginx cache.
+        // Non-seeded zoom (5+): GeoServer renders tiles from TIFFs → only preload frame 0
+        // automatically. Remaining frames load on-demand when user scrubs or clicks Play.
+        const isSeededZoom = !isGwcLayer || currentZoom <= GWC_MAX_SEEDED_ZOOM;
 
         // NOTE: Do NOT seed layerData.wmsLayer (base layer) into animationCache here.
         // The base layer lives in baseWmsPane (z=350); seeding it causes animateNextFrame
@@ -1381,6 +1391,15 @@ async function preloadAllFrames() {
             playBtn.innerHTML = originalText;
             playBtn.disabled = false;
             return false;
+        }
+
+        // Non-seeded zoom (auto-preload only): frame 0 is enough; remaining load on-demand.
+        // forceAllFrames=true (Play button) overrides this — load all frames for smooth animation.
+        if (!isSeededZoom && !forceAllFrames) {
+            console.log(`🏔️ [ZOOM ${currentZoom}] Non-seeded auto-preload — frame 0 only, rest on-demand`);
+            playBtn.innerHTML = originalText;
+            console.timeEnd('⏱️ Total preload time');
+            return true;
         }
 
         // Fire all remaining frames simultaneously — HAR analysis showed that
@@ -1533,7 +1552,7 @@ async function startAnimation(skipPreload = false) {
         // INSTANT MODE: Skip preloading if requested
         if (!skipPreload) {
             window.isAnimationLoading = true;
-            const preloaded = await preloadAllFrames();
+            const preloaded = await preloadAllFrames(true); // forceAllFrames — user clicked Play
             window.isAnimationLoading = false;
 
             if (!preloaded) {
@@ -1590,8 +1609,7 @@ async function animateNextFrame() {
         const nextElevation = currentParams.elevation >= 15 ? 0 : currentParams.elevation + 1;
         // FIX: Use Math.round to match the zoom key used by preloadFrame/preloadAllFrames
         const animZoom = Math.round(map.getZoom());
-        const gwcLayersAnim = ['twl75', 'epis_wl75'];
-        const fixedZoom = (gwcLayersAnim.includes(currentParams.layer) && animZoom >= 6) ? 6 : animZoom;
+        const fixedZoom = (GWC_LAYERS.includes(currentParams.layer) && animZoom >= 6) ? 6 : animZoom;
         const cacheKey = `${currentParams.layer}-${nextElevation}-${fixedZoom}`;
         let newLayer = animationCache[cacheKey];
 
@@ -2306,7 +2324,6 @@ map.on('zoomend', function () {
     console.log(`🔍 Zoom level: ${newZoom}`);
 
     // Evict animationCache entries for zoom levels no longer needed (keep current ±1)
-    const gwcLayers = ['twl75', 'epis_wl75'];
     if (window.animationCache) {
         const roundedZoom = Math.round(newZoom);
         const fixedZoom = (roundedZoom >= 6) ? 6 : roundedZoom;
@@ -2335,15 +2352,18 @@ map.on('zoomend', function () {
         }, 100);
     }
 
-    // Re-preload all video frames for the new zoom so slider stays smooth after zooming
+    // Re-preload video frames for the new zoom so slider stays smooth after zooming.
+    // Pre-seeded zoom (≤4): all 16 frames. Non-seeded zoom (5+): frame 0 only (see preloadAllFrames).
     if (!window.isAnimating && !window.isAnimationLoading && window.autoPreloadVideoLayer) {
+        const roundedNew = Math.round(newZoom);
+        const strategy = roundedNew <= GWC_MAX_SEEDED_ZOOM ? 'all 16 frames (seeded)' : 'frame 0 only (on-the-fly)';
         setTimeout(() => {
             if (window.activeLayers) {
                 window.activeLayers.forEach((layerData, layerId) => {
                     if (layerData.metadata && layerData.metadata.type === 'video'
-                            && gwcLayers.includes(layerId)
+                            && GWC_LAYERS.includes(layerId)
                             && !window.isAnimating && !window.isAnimationLoading) {
-                        console.log(`🔄 [ZOOM] Re-preloading ${layerId} for zoom ${Math.round(newZoom)}`);
+                        console.log(`🔄 [ZOOM ${roundedNew}] Re-preloading ${layerId} — ${strategy}`);
                         window.autoPreloadVideoLayer(layerId);
                     }
                 });
