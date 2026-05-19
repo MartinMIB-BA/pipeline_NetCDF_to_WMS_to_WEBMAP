@@ -1372,7 +1372,7 @@ async function preloadAllFrames() {
 
         const results = [];
 
-        // Load frame 0 first — gives instant visual feedback at new date before rest loads
+        // Frame 0 first — instant visual feedback, gets all 6 browser connections to itself
         console.log('⚡ [PRIORITY] Loading frame 0 first for instant feedback');
         const frame0Result = await preloadFrame(0, updateProgress, currentZoom);
         results.push(frame0Result);
@@ -1383,21 +1383,24 @@ async function preloadAllFrames() {
             return false;
         }
 
-        // Load remaining frames 1–N all in parallel
-        if (totalFrames > 1) {
-            const remaining = [];
-            for (let i = 1; i < totalFrames; i++) {
-                remaining.push(preloadFrame(i, updateProgress, currentZoom));
+        // Remaining frames in pairs — 2 frames × 12 tiles = 24 tiles per round.
+        // 24 tiles / 6 browser connections = 4 rounds × ~200ms = ~800ms per pair.
+        // Each pair becomes scrubbable ~800ms after the previous, vs. all-at-once
+        // where nothing is available until all 180 tiles finish (~6s).
+        const FRAME_CONCURRENCY = 2;
+        for (let i = 1; i < totalFrames; i += FRAME_CONCURRENCY) {
+            const pair = [];
+            for (let j = 0; j < FRAME_CONCURRENCY && (i + j) < totalFrames; j++) {
+                pair.push(preloadFrame(i + j, updateProgress, currentZoom));
             }
-            console.log(`🔄 Loading remaining ${totalFrames - 1} frames in parallel`);
-            const remainingResults = await Promise.all(remaining);
-            results.push(...remainingResults);
-        }
+            const pairResults = await Promise.all(pair);
+            results.push(...pairResults);
 
-        if (!window.isAnimationLoading) {
-            playBtn.innerHTML = originalText;
-            playBtn.disabled = false;
-            return false;
+            if (!window.isAnimationLoading) {
+                playBtn.innerHTML = originalText;
+                playBtn.disabled = false;
+                return false;
+            }
         }
 
         // Check results
