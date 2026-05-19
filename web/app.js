@@ -1372,39 +1372,32 @@ async function preloadAllFrames() {
 
         const results = [];
 
-        for (let i = 0; i < totalFrames; i += batchSize) {
-            // Create batch of promises
-            const batch = [];
-            for (let j = 0; j < batchSize && (i + j) < totalFrames; j++) {
-                batch.push(preloadFrame(i + j, updateProgress, currentZoom));
-            }
+        // Load frame 0 first — gives instant visual feedback at new date before rest loads
+        console.log('⚡ [PRIORITY] Loading frame 0 first for instant feedback');
+        const frame0Result = await preloadFrame(0, updateProgress, currentZoom);
+        results.push(frame0Result);
 
-            // Wait for entire batch to complete in parallel
-            console.log(`🔄 [PROTECTION] Loading batch: frames ${i} to ${Math.min(i + batchSize - 1, totalFrames - 1)} (conservative mode)`);
-            const batchResults = await Promise.all(batch);
-            results.push(...batchResults);
+        if (!window.isAnimationLoading) {
+            playBtn.innerHTML = originalText;
+            playBtn.disabled = false;
+            return false;
+        }
 
-            // ABORT CHECK: Verify if we should still be loading
-            if (!window.isAnimationLoading) {
-                console.warn('🛑 Preloading ABORTED by user');
-                playBtn.innerHTML = originalText;
-                playBtn.disabled = false;
-                return false;
+        // Load remaining frames 1–N all in parallel
+        if (totalFrames > 1) {
+            const remaining = [];
+            for (let i = 1; i < totalFrames; i++) {
+                remaining.push(preloadFrame(i, updateProgress, currentZoom));
             }
+            console.log(`🔄 Loading remaining ${totalFrames - 1} frames in parallel`);
+            const remainingResults = await Promise.all(remaining);
+            results.push(...remainingResults);
+        }
 
-            // SPEED: Minimal delay between batches for maximum throughput
-            if (i + batchSize < totalFrames) {
-                console.log('⏳ [SPEED] Waiting 50ms before next batch...');
-                await new Promise(resolve => setTimeout(resolve, 50)); // SPEED: 50ms delay
-            }
-
-            // SECOND ABORT CHECK: Check again after delay
-            if (!window.isAnimationLoading) {
-                console.warn('🛑 Preloading ABORTED by user');
-                playBtn.innerHTML = originalText;
-                playBtn.disabled = false;
-                return false;
-            }
+        if (!window.isAnimationLoading) {
+            playBtn.innerHTML = originalText;
+            playBtn.disabled = false;
+            return false;
         }
 
         // Check results
@@ -2160,7 +2153,7 @@ document.getElementById('time-select').addEventListener('change', (e) => {
                     && window.activeLayers && window.activeLayers.has(layerToPreload)) {
                 window.autoPreloadVideoLayer(layerToPreload);
             }
-        }, 600);
+        }, 0);
     }
 
     // ✅ CRITICAL: Use debounced param update, NOT layer recreation
