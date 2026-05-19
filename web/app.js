@@ -342,6 +342,8 @@ window.isAnimating = false;
 window.isAnimationLoading = false; // Add missing flag to window
 let isAnimationBusy = false; // Lock to prevent overlapping frame transitions
 let animationSpeed = 500; // milliseconds per frame (0.5 second local)
+// Debounce timer for auto-preload on rapid date/hour switching
+let autoPreloadDebounceTimer = null;
 let crossfadeDuration = 150; // milliseconds for ultra-smooth fade transition (60fps compatible)
 let instantLoadMode = false; // If true, skip preloading and load frames on-demand
 
@@ -1064,30 +1066,39 @@ window.setAnimationSpeed = setAnimationSpeed;
 // Global cache for animation layers (L.tileLayer instances)
 if (!window.animationCache) window.animationCache = {};
 
-// Helper function to preload a single frame with cache support
-// Helper to preload a single frame (exposed for manual navigation)
 // Track in-flight preload promises to avoid duplicate requests
 const activePreloads = new Map();
+
+// Track Leaflet tile layers currently loading (not yet in animationCache).
+// Needed to abort their browser tile requests when date/hour changes.
+if (!window.activePreloadLayers) window.activePreloadLayers = new Set();
 
 // Clear animation-related caches for a specific layer (e.g., when TIME changes)
 function clearAnimationCacheForLayer(layerId) {
     if (!layerId) return;
 
-    // Remove cached animation layers from map and cache
+    // Abort in-progress preload layers (not yet in animationCache) immediately.
+    // removeLayer triggers Leaflet _abortLoading → sets img.src='' → cancels browser requests.
+    // This frees the 6 HTTP/1.1 connection slots so the next preload can start right away.
+    if (window.activePreloadLayers) {
+        window.activePreloadLayers.forEach(layer => {
+            if (layer._preloadLayerId === layerId) {
+                try {
+                    if (window.map && window.map.hasLayer(layer)) window.map.removeLayer(layer);
+                } catch (e) {}
+                window.activePreloadLayers.delete(layer);
+            }
+        });
+    }
+
+    // Remove already-cached animation layers from map and cache
     if (window.animationCache) {
         Object.keys(window.animationCache).forEach(key => {
             if (key.startsWith(`${layerId}-`)) {
                 const layer = window.animationCache[key];
                 try {
                     if (layer && window.map && window.map.hasLayer(layer)) {
-                        // FIX: Do NOT remove the layer instantly, as it might be currently rendering.
-                        // Hide it first, then remove it safely in the next cycle.
-                        layer.setOpacity(0);
-                        setTimeout(() => {
-                            if (window.map.hasLayer(layer)) {
-                                window.map.removeLayer(layer);
-                            }
-                        }, 100);
+                        window.map.removeLayer(layer);
                     }
                 } catch (e) {
                     console.warn('⚠️ Failed to remove cached layer', e);
@@ -1100,16 +1111,12 @@ function clearAnimationCacheForLayer(layerId) {
     // Clear frame metadata cache (LRU) for this layer
     clearLayerCache(layerId);
 
-    // FIX #14: Collect keys first, then delete to avoid undefined behavior when deleting during iteration
     const keysToDelete = [];
     activePreloads.forEach((_, key) => {
-        if (key.startsWith(`${layerId}-`)) {
-            keysToDelete.push(key);
-        }
+        if (key.startsWith(`${layerId}-`)) keysToDelete.push(key);
     });
     keysToDelete.forEach(key => activePreloads.delete(key));
 
-    // Reset preload flags so next Play does a clean reload
     if (typeof window.resetPreloadStatus === 'function') {
         window.resetPreloadStatus();
     }
@@ -1225,6 +1232,10 @@ async function preloadFrame(day, updateProgress = null, zoomLevel = null) {
             pane: 'animWmsPane'  // FIX: always above base WMS layers
         });
 
+        // Register so clearAnimationCacheForLayer can abort in-flight tile requests
+        tempLayer._preloadLayerId = currentParams.layer;
+        window.activePreloadLayers.add(tempLayer);
+
         let tilesLoaded = false;
         let loadTimeout = null;
         let tilesLoadedCount = 0;
@@ -1246,7 +1257,9 @@ async function preloadFrame(day, updateProgress = null, zoomLevel = null) {
             if (!tilesLoaded) {
                 tilesLoaded = true;
                 clearTimeout(loadTimeout);
-                // console.log(`✅ Preloaded day ${day} (${tilesLoadedCount} tiles)`);
+
+                // Unregister from in-progress tracker — tiles are done loading
+                window.activePreloadLayers.delete(tempLayer);
 
                 // Store INSTANCE in animation cache
                 window.animationCache[cacheKey] = tempLayer;
@@ -1273,6 +1286,7 @@ async function preloadFrame(day, updateProgress = null, zoomLevel = null) {
         loadTimeout = setTimeout(() => {
             if (!tilesLoaded) {
                 tilesLoaded = true;
+                window.activePreloadLayers.delete(tempLayer);
                 console.warn(`⚠️ Timeout loading day ${day} (${tilesLoadedCount}/${totalTilesNeeded} tiles loaded)`);
 
                 // Even on timeout, cache what we have
@@ -1393,12 +1407,29 @@ async function preloadAllFrames(forceAllFrames = false) {
             return false;
         }
 
-        // Non-seeded zoom (auto-preload only): frame 0 is enough; remaining load on-demand.
-        // forceAllFrames=true (Play button) overrides this — load all frames for smooth animation.
+        // Non-seeded zoom (auto-preload only): load frame 0 immediately (already done above),
+        // then warm up remaining frames 2 at a time in the background with 400ms gaps.
+        // This avoids flooding GeoServer (first render from TIFF) while still warming Nginx cache
+        // so that Play and scrubbing are fast on subsequent visits to the same date.
         if (!isSeededZoom && !forceAllFrames) {
-            console.log(`🏔️ [ZOOM ${currentZoom}] Non-seeded auto-preload — frame 0 only, rest on-demand`);
+            console.log(`🏔️ [ZOOM ${currentZoom}] Non-seeded — frame 0 done, warming frames 1-${totalFrames-1} in background (2/400ms)`);
             playBtn.innerHTML = originalText;
             console.timeEnd('⏱️ Total preload time');
+
+            // Background warm-up: 2 frames per 400ms — doesn't block UI, can be cancelled by date change
+            const layerSnapshot = currentParams.layer;
+            const timeSnapshot = currentParams.time;
+            (async () => {
+                for (let i = 1; i < totalFrames; i += 2) {
+                    // Stop if date/layer changed or animation started
+                    if (currentParams.layer !== layerSnapshot || currentParams.time !== timeSnapshot
+                            || window.isAnimating || window.isAnimationLoading) break;
+                    const batch = [preloadFrame(i, null, currentZoom)];
+                    if (i + 1 < totalFrames) batch.push(preloadFrame(i + 1, null, currentZoom));
+                    await Promise.all(batch);
+                    await new Promise(r => setTimeout(r, 400));
+                }
+            })();
             return true;
         }
 
@@ -2164,17 +2195,21 @@ document.getElementById('time-select').addEventListener('change', (e) => {
     currentParams.time = safeValue + ':00.000Z';
     console.log('⏰ Time changed to (UTC):', currentParams.time);
 
-    // Clear video caches so new TIME actually loads fresh frames
+    // Clear video caches so new TIME actually loads fresh frames.
+    // clearAnimationCacheForLayer also aborts in-flight tile requests to free connection slots.
     if (currentMeta && currentMeta.type === 'video') {
         clearAnimationCacheForLayer(currentParams.layer);
-        // Auto re-preload so the slider stays smooth without requiring Play
+        // Debounce auto-preload: if user is clicking rapidly through dates/hours,
+        // wait 300ms after the last click before starting preload.
+        // Eliminates hundreds of stale tile requests flooding the connection pool.
         const layerToPreload = currentParams.layer;
-        setTimeout(() => {
+        clearTimeout(autoPreloadDebounceTimer);
+        autoPreloadDebounceTimer = setTimeout(() => {
             if (window.autoPreloadVideoLayer && !window.isAnimating && !window.isAnimationLoading
                     && window.activeLayers && window.activeLayers.has(layerToPreload)) {
                 window.autoPreloadVideoLayer(layerToPreload);
             }
-        }, 0);
+        }, 300);
     }
 
     // ✅ CRITICAL: Use debounced param update, NOT layer recreation
