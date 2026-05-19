@@ -1383,24 +1383,24 @@ async function preloadAllFrames() {
             return false;
         }
 
-        // Remaining frames in pairs — 2 frames × 12 tiles = 24 tiles per round.
-        // 24 tiles / 6 browser connections = 4 rounds × ~200ms = ~800ms per pair.
-        // Each pair becomes scrubbable ~800ms after the previous, vs. all-at-once
-        // where nothing is available until all 180 tiles finish (~6s).
-        const FRAME_CONCURRENCY = 2;
-        for (let i = 1; i < totalFrames; i += FRAME_CONCURRENCY) {
-            const pair = [];
-            for (let j = 0; j < FRAME_CONCURRENCY && (i + j) < totalFrames; j++) {
-                pair.push(preloadFrame(i + j, updateProgress, currentZoom));
+        // Fire all remaining frames simultaneously — HAR analysis showed that
+        // pairs (FRAME_CONCURRENCY=2) caused 13.5s for cold cache vs 6.8s all-at-once.
+        // With 6 browser connections, 180 tiles pipeline through 30 rounds × 200ms = 6s.
+        // Sequential pairs added 1.7s stall between each pair due to serial awaiting.
+        // Individual frames still become available as their tiles complete (frame 1 ~1s, etc.)
+        if (totalFrames > 1) {
+            const remaining = [];
+            for (let i = 1; i < totalFrames; i++) {
+                remaining.push(preloadFrame(i, updateProgress, currentZoom));
             }
-            const pairResults = await Promise.all(pair);
-            results.push(...pairResults);
+            const remainingResults = await Promise.all(remaining);
+            results.push(...remainingResults);
+        }
 
-            if (!window.isAnimationLoading) {
-                playBtn.innerHTML = originalText;
-                playBtn.disabled = false;
-                return false;
-            }
+        if (!window.isAnimationLoading) {
+            playBtn.innerHTML = originalText;
+            playBtn.disabled = false;
+            return false;
         }
 
         // Check results

@@ -894,7 +894,7 @@ function addLayer(layerId) {
             if (activeLayers.has(layerId) && !window.isAnimating && !window.isAnimationLoading) {
                 window.autoPreloadVideoLayer(layerId);
             }
-        }, 1500);
+        }, 300);
     }
 }
 
