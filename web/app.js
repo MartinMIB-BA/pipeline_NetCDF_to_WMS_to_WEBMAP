@@ -1494,6 +1494,15 @@ window.autoPreloadVideoLayer = async function (layerId, _retryCount = 0) {
     const layerData = window.activeLayers && window.activeLayers.get(layerId);
     if (!layerData) return;
 
+    // Skip preload for dates not in readyDates — would cause 400s from GeoServer
+    if (window.wmsMetadata && window.wmsMetadata.readyDates.size > 0) {
+        const dateStr = (layerData.time || '').slice(0, 10);
+        if (dateStr && !window.wmsMetadata.readyDates.has(dateStr)) {
+            console.log(`⏭️ [PRELOAD] Skipping ${layerId} — date ${dateStr} not in readyDates`);
+            return;
+        }
+    }
+
     const prevLayer = currentParams.layer;
     const prevTime = currentParams.time;
     const prevElevation = currentParams.elevation;
