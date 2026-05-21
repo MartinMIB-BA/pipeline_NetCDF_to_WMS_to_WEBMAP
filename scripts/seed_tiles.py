@@ -237,20 +237,27 @@ const TILE_SIZE = 512;
 const zoomStart = %d;
 const zoomStop  = %d;
 
-// Replicates Leaflet's exact code path (including degrees roundtrip).
+// Leaflet CRS.EPSG3857 transformation constant: a = 0.5 / (Math.PI * R)
+const a = 0.5 / (Math.PI * R);
+
+// Replicates Leaflet's exact code path.
+// X: use direct division (px/scale - 0.5) / a — this is exactly what Leaflet's
+//    untransform does, and avoids the degrees-roundtrip ULP drift that would shift
+//    world-edge X values from ...244 to ...248.  The roundtrip (unproject→project)
+//    for X is mathematically a no-op but introduces floating-point error because
+//    (180/PI)*(PI/180) ≠ 1 in IEEE-754.
+// Y: must go through degrees roundtrip — Leaflet's SphericalMercator.unproject then
+//    .project uses exp/atan→sin/log and the deterministic ULP shift must be preserved
+//    so our bbox float strings match the browser's nginx cache keys exactly.
 function pixelToMercator(px, py, scale) {
-    // Step 1 — untransform: pixels → CRS metres (Leaflet CRS.EPSG3857 transformation)
-    const x_m = (px / scale - 0.5) * 2 * Math.PI * R;
+    // X — direct division, no degrees roundtrip
+    const x = (px / scale - 0.5) / a;
+
+    // Y — full degrees roundtrip (unproject then project)
     const y_m = (0.5 - py / scale) * 2 * Math.PI * R;
-
-    // Step 2 — SphericalMercator.unproject: metres → LatLng in DEGREES
     const lat_deg = (2 * Math.atan(Math.exp(y_m / R)) - Math.PI / 2) * (180 / Math.PI);
-    const lng_deg = x_m / R * (180 / Math.PI);
-
-    // Step 3 — SphericalMercator.project: LatLng degrees → CRS metres
     const d   = Math.PI / 180;
     const sin = Math.max(Math.min(Math.sin(lat_deg * d), 1 - 1e-15), -(1 - 1e-15));
-    const x   = R * lng_deg * d;
     const y   = R * Math.log((1 + sin) / (1 - sin)) / 2;
     return [x, y];
 }
@@ -323,22 +330,28 @@ def _warmup_single(session: requests.Session, layer: str,
     # Build bbox string with literal commas
     bbox_str = ','.join(_fmt(v) for v in (minX, minY, maxX, maxY))
 
-    # Encode all other params normally, then append bbox manually
+    # Encode all other params normally, then append bbox manually.
+    # CRITICAL: parameter ORDER must match the exact order that the Leaflet preload
+    # system sends, otherwise the nginx cache key (full URI string) won't match
+    # and every warmup request will be a cache MISS for real app traffic.
+    # Order verified from actual browser network requests:
+    #   service, request, styles, format, transparent, version, tiled, SRS, srs,
+    #   width, height, layers, time, elevation  [bbox appended last]
     qs = urllib.parse.urlencode({
         'service':     'WMS',
         'request':     'GetMap',
-        'layers':      f'{WORKSPACE}:{layer}',
         'styles':      '',
         'format':      'image/png8',
         'transparent': 'true',
         'version':     '1.1.1',
-        'time':        time_val,
-        'elevation':   elev_val,
         'tiled':       'true',
         'SRS':         'EPSG:900913x2',
         'srs':         'EPSG:3857',
         'width':       '512',
         'height':      '512',
+        'layers':      f'{WORKSPACE}:{layer}',
+        'time':        time_val,
+        'elevation':   elev_val,
     })
     url = f"{NGINX_WARMUP_URL}/geoserver/gwc/service/wms?{qs}&bbox={bbox_str}"
 
