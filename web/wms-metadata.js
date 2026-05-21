@@ -239,12 +239,24 @@ class WMSMetadata {
         }
     }
 
+    /**
+     * Full date list from WMS Capabilities — used for calendar min/max navigation range.
+     * Never filtered by ready_dates so the user can always browse the full date range.
+     */
+    getFullDatesForLayer(layerId) {
+        const idx = this.buildTimeIndexForLayer(layerId);
+        return idx ? idx.dates : [];
+    }
+
+    /**
+     * Ready-filtered date list — used for WMS tile requests and date-snapping.
+     * For video layers, only returns dates that are fully GWC+nginx warmed.
+     * If ready_dates.json hasn't loaded yet or is empty, returns all (safe fallback).
+     */
     getAvailableDatesForLayer(layerId) {
         const idx = this.buildTimeIndexForLayer(layerId);
         if (!idx) return [];
 
-        // Video layers: only expose dates that are fully GWC+nginx warmed.
-        // If ready_dates.json hasn't loaded yet or is empty, allow all (safe fallback).
         const VIDEO_LAYERS = ['twl75', 'epis_wl75'];
         if (VIDEO_LAYERS.includes(layerId) && this.readyDates.size > 0) {
             return idx.dates.filter(d => this.readyDates.has(d));

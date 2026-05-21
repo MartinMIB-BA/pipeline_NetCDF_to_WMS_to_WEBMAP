@@ -1035,6 +1035,7 @@ function updateLayerInfo() {
             if (!isUserChangingDate) {
                 const localFormat = currentParams.time.substring(0, 16);
                 globalTimeInput.value = localFormat;
+                syncDateHourFromTimeValue(localFormat); // keep date-select + hour buttons in sync
                 console.log(`✅ [DATE FIX] Updated main panel date to: ${localFormat}`);
             } else {
                 console.log('🧪 [DATE FIX] Skipped main panel update (user change in progress)');
@@ -2040,8 +2041,14 @@ function updateGlobalDateControlsForLayer(layerId, reason = '') {
     const currentDate = dateInput.value;
     const currentHour = hourSelect.value || '00';
 
-    dateInput.min = dates[0];
-    dateInput.max = dates[dates.length - 1];
+    // Use full capabilities range for calendar min/max so users can browse all dates.
+    // getAvailableDatesForLayer returns only ready-seeded dates (for snapping logic below),
+    // but the calendar itself must not be locked to that narrow window.
+    const fullDates = window.wmsMetadata.getFullDatesForLayer(layerId);
+    if (fullDates.length > 0) {
+        dateInput.min = fullDates[0];
+        dateInput.max = fullDates[fullDates.length - 1];
+    }
 
     let nextDate = currentDate;
     if (!dates.includes(currentDate)) {
@@ -2129,10 +2136,16 @@ function syncDateHourFromTimeValue(timeValue) {
     try {
         const datePart = timeValue.slice(0, 10);
         const hourPart = timeValue.slice(11, 13);
+        const activeHour = hourPart >= '12' ? '12' : '00';
         const dateInput = document.getElementById('date-select');
         const hourSelect = document.getElementById('hour-select');
         if (dateInput) dateInput.value = datePart;
-        if (hourSelect) hourSelect.value = hourPart === '12' ? '12' : '00';
+        if (hourSelect) hourSelect.value = activeHour;
+        // Keep visual hour-toggle-btn buttons in sync (animation ticks don't fire
+        // time-select change, so this is the only place that updates their state).
+        document.querySelectorAll('.hour-toggle-btn').forEach(btn => {
+            btn.classList.toggle('hour-toggle-active', btn.dataset.hour === activeHour);
+        });
     } finally {
         isSyncingDateControls = false;
     }
