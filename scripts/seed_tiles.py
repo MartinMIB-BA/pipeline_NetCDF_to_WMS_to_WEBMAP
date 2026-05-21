@@ -1,12 +1,12 @@
 """
 seed_tiles.py — Pre-seed GeoWebCache tiles for epis_wl75 and twl75 layers.
 
-- Queries PostGIS for TIME + ELEVATION values from the last 7 days
+- Queries PostGIS for TIME + ELEVATION values from the last 14 days
 - Sends GWC REST API seed requests for zoom levels 2-4, full world extent
-- Truncates tiles older than 7 days to free cache space
+- Truncates tiles older than 14 days to free cache space
 
 Usage:
-    python seed_tiles.py             # seed last 7 days, truncate old
+    python seed_tiles.py             # seed last 14 days, truncate old
     python seed_tiles.py --dry-run   # show what would be done, no requests
     python seed_tiles.py --truncate-only  # only remove old tiles
 """
@@ -48,7 +48,7 @@ ZOOM_STOP   = 4
 GRID_SET_ID = "EPSG:900913x2"            # Web Mercator x2 — matches Leaflet/GWC default
 TILE_FORMAT = "image/png8"
 THREAD_COUNT = 2                         # parallel GWC threads per seed job
-PURGE_DAYS  = 7                          # truncate tiles older than N days
+PURGE_DAYS  = 14                         # truncate tiles older than N days
 
 AUTH = (GEOSERVER_USER, GEOSERVER_PASS)
 
@@ -598,7 +598,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Pre-seed GWC tiles for video WMS layers")
     parser.add_argument("--dry-run",       action="store_true", help="Print actions without sending requests")
     parser.add_argument("--truncate-only", action="store_true", help="Only truncate old tiles, skip seeding")
-    parser.add_argument("--days",          type=int, default=7,  help="How many days back to seed (default: 7)")
+    parser.add_argument("--days",          type=int, default=14, help="How many days back to seed (default: 14)")
     args = parser.parse_args()
 
     run_seed(dry_run=args.dry_run, truncate_only=args.truncate_only, days=args.days)
