@@ -10,6 +10,10 @@ class WMSMetadata {
         this.layers = new Map(); // layerId -> { times: Set, elevations: Set, hasElevation: bool }
         this.loading = false;
         this.loaded = false;
+        // Dates that have been fully GWC-seeded + nginx-warmed (written by seed_tiles.py).
+        // Only video layers are filtered — static layers are always allowed.
+        this.readyDates = new Set(); // YYYY-MM-DD strings
+        this.readyDatesLoaded = false;
     }
 
     /**
@@ -51,6 +55,9 @@ class WMSMetadata {
 
             const xmlText = await response.text();
             this.parseCapabilities(xmlText);
+
+            // Fetch ready_dates.json in parallel — don't block capabilities load
+            this.fetchReadyDates();
 
             this.loaded = true;
             this.loading = false;
@@ -209,9 +216,40 @@ class WMSMetadata {
         return layerData.timeIndex;
     }
 
+    /**
+     * Fetch /ready_dates.json written by seed_tiles.py after GWC+nginx warm-up.
+     * If the file is missing (e.g. fresh deploy) all dates are allowed.
+     */
+    async fetchReadyDates() {
+        try {
+            const resp = await fetch('/ready_dates.json?_=' + Date.now());
+            if (!resp.ok) {
+                // File doesn't exist yet — allow all dates
+                console.warn('⚠️ ready_dates.json not found — all dates allowed');
+                this.readyDatesLoaded = true;
+                return;
+            }
+            const data = await resp.json();
+            (data.ready_dates || []).forEach(d => this.readyDates.add(d));
+            this.readyDatesLoaded = true;
+            console.log(`📋 Ready dates loaded: ${this.readyDates.size} date(s)`, [...this.readyDates]);
+        } catch (e) {
+            console.warn('⚠️ Could not fetch ready_dates.json — all dates allowed:', e);
+            this.readyDatesLoaded = true;
+        }
+    }
+
     getAvailableDatesForLayer(layerId) {
         const idx = this.buildTimeIndexForLayer(layerId);
-        return idx ? idx.dates : [];
+        if (!idx) return [];
+
+        // Video layers: only expose dates that are fully GWC+nginx warmed.
+        // If ready_dates.json hasn't loaded yet or is empty, allow all (safe fallback).
+        const VIDEO_LAYERS = ['twl75', 'epis_wl75'];
+        if (VIDEO_LAYERS.includes(layerId) && this.readyDates.size > 0) {
+            return idx.dates.filter(d => this.readyDates.has(d));
+        }
+        return idx.dates;
     }
 
     getAvailableHoursForLayerDate(layerId, dateStr) {
