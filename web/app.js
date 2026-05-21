@@ -477,16 +477,24 @@ function debounce(func, wait) {
 // ═══════════════════════════════════════════════════════════════
 // NO DATA AVAILABLE OVERLAY FUNCTIONS
 // ═══════════════════════════════════════════════════════════════
-function showNoDataOverlay() {
-    const overlay = document.getElementById('no-data-overlay');
-    if (overlay && overlay.style.display === 'none') {
-        overlay.style.display = 'flex';
-        console.log('📢 Showing "No Data Available" overlay');
-    }
+let _noDataOverlayTimer = null;
+
+// Show overlay only after a delay — tiles from GeoTIFF can take ~1s to render,
+// so we wait before declaring "no data" to avoid a false flash on slow-loading dates.
+function showNoDataOverlay(delay = 1500) {
+    clearTimeout(_noDataOverlayTimer);
+    _noDataOverlayTimer = setTimeout(() => {
+        const overlay = document.getElementById('no-data-overlay');
+        if (overlay && overlay.style.display === 'none') {
+            overlay.style.display = 'flex';
+            console.log('📢 Showing "No Data Available" overlay');
+        }
+    }, delay);
 }
 
-
 function hideNoDataOverlay() {
+    clearTimeout(_noDataOverlayTimer);
+    _noDataOverlayTimer = null;
     const overlay = document.getElementById('no-data-overlay');
     if (overlay && overlay.style.display !== 'none') {
         overlay.style.display = 'none';
@@ -1500,7 +1508,7 @@ window.autoPreloadVideoLayer = async function (layerId, _retryCount = 0) {
         const dateStr = (layerData.time || '').slice(0, 10);
         if (dateStr && !window.wmsMetadata.readyDates.has(dateStr)) {
             console.log(`⏭️ [PRELOAD] Skipping ${layerId} — date ${dateStr} not in readyDates`);
-            showNoDataOverlay();
+            showNoDataOverlay(0); // immediate — we know for certain there's no cached data
             return;
         }
     }
