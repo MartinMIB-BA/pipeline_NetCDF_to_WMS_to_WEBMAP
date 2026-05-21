@@ -253,7 +253,10 @@ def _warmup_single(session: requests.Session, layer: str,
         'srs':         'EPSG:3857',
         'width':       '512',
         'height':      '512',
-        'bbox':        f'{minX},{minY},{maxX},{maxY}',
+        'bbox':        ','.join(
+            str(int(v)) if v == int(v) else str(v)
+            for v in (minX, minY, maxX, maxY)
+        ),
     }
     try:
         r = session.get(
