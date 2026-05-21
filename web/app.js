@@ -8,6 +8,7 @@ const WORKSPACE = 'E_and_T';
 // GWC gridset EPSG:900913x2 is pre-seeded only for zoom 2-4.
 // Zoom 5+ tiles are rendered on-the-fly by GeoServer from TIFFs.
 const GWC_MAX_SEEDED_ZOOM = 4;
+window.GWC_MAX_SEEDED_ZOOM = GWC_MAX_SEEDED_ZOOM;
 const GWC_LAYERS = ['twl75', 'epis_wl75'];
 
 // ═══════════════════════════════════════════════════════════════

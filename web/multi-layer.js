@@ -1456,9 +1456,10 @@ window.updatePlayButtonsState = function () {
             const gwcLayers = ['twl75', 'epis_wl75'];
             const isGwcLayer = gwcLayers.includes(layerId);
 
-            if (isGwcLayer && currentZoom >= 6) {
+            const maxSeededZoom = window.GWC_MAX_SEEDED_ZOOM ?? 4;
+            if (isGwcLayer && currentZoom > maxSeededZoom) {
                 playBtn.disabled = true;
-                playBtn.title = 'Animácia je pri úrovni priblíženia 6+ vypnutá z dôvodu ochrany servera. Snímky sa ukladajú iba pre statický pohľad.';
+                playBtn.title = `Animácia je dostupná iba pri priblížení ${maxSeededZoom} alebo menej. Oddialte mapu pre spustenie animácie.`;
                 playBtn.style.opacity = '0.5';
                 playBtn.style.cursor = 'not-allowed';
             } else {
