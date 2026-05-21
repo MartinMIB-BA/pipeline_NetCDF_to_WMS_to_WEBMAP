@@ -1552,6 +1552,14 @@ async function startAnimation(skipPreload = false) {
         return;
     }
 
+    // Block animation at zoom levels above GWC_MAX_SEEDED_ZOOM (tiles not pre-seeded).
+    const currentZoomForAnim = getCurrentZoomLevel();
+    if (currentZoomForAnim > GWC_MAX_SEEDED_ZOOM) {
+        console.warn(`⚠️ Animation blocked at zoom ${currentZoomForAnim} — only available at zoom ≤ ${GWC_MAX_SEEDED_ZOOM}`);
+        alert(`Animation is only available at zoom level ${GWC_MAX_SEEDED_ZOOM} or lower.\nPlease zoom out to play the animation.`);
+        return;
+    }
+
     // Sync global animation speed from the active layer settings before every start.
     // This prevents carrying speed from a previously played video layer.
     if (window.activeLayers && window.activeLayers.has(currentParams.layer)) {
