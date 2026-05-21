@@ -909,7 +909,8 @@ async function checkDataAvailability() {
         if (window.hideNoDataOverlay) window.hideNoDataOverlay();
         return true;
     } else {
-        console.warn('⚠️ Data UNAVAILABLE (Metadata Verified) - but allowing request to proceed');
+        console.warn('⚠️ Data UNAVAILABLE (Metadata Verified)');
+        showNoDataOverlay();
         return false;
     }
 }
@@ -1499,9 +1500,11 @@ window.autoPreloadVideoLayer = async function (layerId, _retryCount = 0) {
         const dateStr = (layerData.time || '').slice(0, 10);
         if (dateStr && !window.wmsMetadata.readyDates.has(dateStr)) {
             console.log(`⏭️ [PRELOAD] Skipping ${layerId} — date ${dateStr} not in readyDates`);
+            showNoDataOverlay();
             return;
         }
     }
+    hideNoDataOverlay();
 
     const prevLayer = currentParams.layer;
     const prevTime = currentParams.time;
