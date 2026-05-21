@@ -1083,39 +1083,39 @@
         /* ── No-data banner ── */
         .no-data-banner {
             position: fixed;
-            top: 72px;
+            top: 50%;
             left: 50%;
-            transform: translateX(-50%);
+            transform: translate(-50%, -50%);
             z-index: 1500;
-            background: rgba(10, 15, 30, 0.88);
-            backdrop-filter: blur(14px);
-            -webkit-backdrop-filter: blur(14px);
-            border: 1px solid rgba(251, 191, 36, 0.4);
-            border-radius: 14px;
-            padding: 12px 24px;
+            background: rgba(10, 15, 30, 0.92);
+            backdrop-filter: blur(18px);
+            -webkit-backdrop-filter: blur(18px);
+            border: 1.5px solid rgba(251, 191, 36, 0.6);
+            border-radius: 18px;
+            padding: 22px 40px;
             display: flex;
+            flex-direction: column;
             align-items: center;
-            gap: 10px;
-            box-shadow: 0 8px 30px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(251, 191, 36, 0.1) inset;
-            animation: slideDown 0.3s ease;
+            gap: 14px;
+            box-shadow: 0 12px 48px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(251, 191, 36, 0.15) inset;
+            animation: fadeScaleIn 0.25s ease;
             pointer-events: none;
         }
 
-        @keyframes slideDown {
+        @keyframes fadeScaleIn {
             from {
-                transform: translateX(-50%) translateY(-16px);
+                transform: translate(-50%, -50%) scale(0.92);
                 opacity: 0;
             }
-
             to {
-                transform: translateX(-50%) translateY(0);
+                transform: translate(-50%, -50%) scale(1);
                 opacity: 1;
             }
         }
 
         .no-data-banner i {
             color: var(--warning);
-            font-size: 16px;
+            font-size: 32px;
             animation: pulseFade 2s ease-in-out infinite;
         }
 
@@ -1133,9 +1133,10 @@
 
         .no-data-banner span {
             color: var(--text-main);
-            font-size: 12px;
+            font-size: 15px;
             font-weight: 600;
-            letter-spacing: 0.2px;
+            letter-spacing: 0.3px;
+            text-align: center;
         }
 
         /* ── Active-layers badge container (bottom dock) ── */
