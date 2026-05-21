@@ -20,6 +20,7 @@ import json
 import subprocess
 import sys
 import time
+import urllib.parse
 
 import psycopg2
 import requests
@@ -307,10 +308,23 @@ process.stdout.write(JSON.stringify(results));
 
 def _warmup_single(session: requests.Session, layer: str,
                    time_val: str, elev_val: str, bbox: tuple) -> bool:
-    """Fire one nginx warmup request. Returns True on HTTP 200."""
+    """Fire one nginx warmup request. Returns True on HTTP 200.
+
+    IMPORTANT: bbox commas must be literal, NOT percent-encoded (%2C).
+    Nginx cache key = full URI string.  Leaflet sends raw commas in bbox,
+    so we must do the same — using requests' params= would encode them as %2C
+    and the cache keys would never match.
+    """
     _, _col, _row, minX, minY, maxX, maxY = bbox
-    # Parameter ORDER must match Leaflet exactly — nginx cache key = full URI
-    params = {
+
+    def _fmt(v: float) -> str:
+        return str(int(v)) if v == int(v) else str(v)
+
+    # Build bbox string with literal commas
+    bbox_str = ','.join(_fmt(v) for v in (minX, minY, maxX, maxY))
+
+    # Encode all other params normally, then append bbox manually
+    qs = urllib.parse.urlencode({
         'service':     'WMS',
         'request':     'GetMap',
         'layers':      f'{WORKSPACE}:{layer}',
@@ -325,16 +339,11 @@ def _warmup_single(session: requests.Session, layer: str,
         'srs':         'EPSG:3857',
         'width':       '512',
         'height':      '512',
-        'bbox':        ','.join(
-            str(int(v)) if v == int(v) else str(v)
-            for v in (minX, minY, maxX, maxY)
-        ),
-    }
+    })
+    url = f"{NGINX_WARMUP_URL}/geoserver/gwc/service/wms?{qs}&bbox={bbox_str}"
+
     try:
-        r = session.get(
-            f"{NGINX_WARMUP_URL}/geoserver/gwc/service/wms",
-            params=params, timeout=30
-        )
+        r = session.get(url, timeout=30)
         return r.status_code == 200
     except Exception:
         return False
