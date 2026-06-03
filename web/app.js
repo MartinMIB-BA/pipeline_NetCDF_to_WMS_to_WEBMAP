@@ -953,17 +953,21 @@ async function updateWMSParams() {
     // UI Updates
     if (window.showLoadingOverlay) window.showLoadingOverlay(); // Show spinner
 
-    // Standard WMS: update only changed params
-    // GloFAS requiresTime layers use date-only format (YYYY-MM-DDT00:00:00), not the global time string
-    let newTime = currentParams.time;
-    if (metadata && metadata.requiresTime && currentParams.time) {
-        newTime = currentParams.time.split('T')[0] + 'T00:00:00';
+    // If multi-layer system is active, refreshLayerTiles already called setParams+redraw
+    // for all active layers — skip here to prevent a second (duplicate) redraw.
+    if (!window.activeLayers || window.activeLayers.size === 0) {
+        // Standard WMS: update only changed params
+        // GloFAS requiresTime layers use date-only format (YYYY-MM-DDT00:00:00), not the global time string
+        let newTime = currentParams.time;
+        if (metadata && metadata.requiresTime && currentParams.time) {
+            newTime = currentParams.time.split('T')[0] + 'T00:00:00';
+        }
+        const newParams = { time: newTime };
+        if (metadata && metadata.hasElevation) {
+            newParams.elevation = currentParams.elevation;
+        }
+        wmsLayer.setParams(newParams, false);
     }
-    const newParams = { time: newTime };
-    if (metadata && metadata.hasElevation) {
-        newParams.elevation = currentParams.elevation;
-    }
-    wmsLayer.setParams(newParams, false);
 
     // CRITICAL: Proactively check data availability
     // This shows banner IMMEDIATELY without waiting for tiles

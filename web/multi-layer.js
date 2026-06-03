@@ -755,7 +755,13 @@ function addLayer(layerId) {
     const isGlofas = !!(metadata && metadata.wmsUrl);
 
     const glofasTime = (isGlofas && metadata.requiresTime)
-        ? new Date().toISOString().split('T')[0] + 'T00:00:00'
+        ? (() => {
+            const sel = document.getElementById('time-select');
+            const dateStr = (sel && sel.value && sel.value.length >= 10)
+                ? sel.value.slice(0, 10)
+                : new Date().toISOString().slice(0, 10);
+            return dateStr + 'T00:00:00';
+        })()
         : undefined;
 
     const wmsParams = {
@@ -1564,11 +1570,23 @@ document.addEventListener('DOMContentLoaded', function () {
     // the legacy wmsLayer, NOT the multi-layer activeLayers tiles.
     const timeSelect = document.getElementById('time-select');
     if (timeSelect) {
+        // Debounced tile refresh — prevents flooding server on rapid date clicks
+        const debouncedTimeRefresh = debounce((newTime, rawValue) => {
+            activeLayers.forEach((layerData, layerId) => {
+                refreshLayerTiles(layerId, layerData, { time: newTime });
+                const individualInput = document.getElementById(`time-${layerId}`);
+                if (individualInput) individualInput.value = rawValue;
+            });
+            checkAllLayersAvailability();
+        }, 200);
+
         timeSelect.addEventListener('change', function () {
             if (!this.value || this.value.length < 16) return;
             const newTime = this.value + ':00.000Z';
+            const rawValue = this.value;
             console.log('⏰ [multi-layer] Global time changed:', newTime);
 
+            // Immediate state updates (no debounce — needed for cache clear and UI labels)
             activeLayers.forEach((layerData, layerId) => {
                 layerData.time = newTime;
 
@@ -1580,11 +1598,6 @@ document.addEventListener('DOMContentLoaded', function () {
                     window.clearAnimationCacheForLayer(layerId);
                 }
 
-                refreshLayerTiles(layerId, layerData, { time: newTime });
-
-                const individualInput = document.getElementById(`time-${layerId}`);
-                if (individualInput) individualInput.value = this.value;
-
                 if (hasForecastDateLabel(layerData.metadata)) {
                     updateForecastDateLabel(layerId, layerData.elevation, newTime);
                 }
@@ -1592,7 +1605,9 @@ document.addEventListener('DOMContentLoaded', function () {
                     updateForecastRangeLabel(layerId, newTime);
                 }
             });
-            checkAllLayersAvailability();
+
+            // Debounced: tile refresh and input sync (prevents double-fire with app.js updateWMSParams)
+            debouncedTimeRefresh(newTime, rawValue);
         });
     }
 
@@ -1732,10 +1747,10 @@ document.addEventListener('DOMContentLoaded', function () {
 // newParams: { time?, elevation? } — only pass what changed
 // ─────────────────────────────────────────────────────────────────────────────
 function refreshLayerTiles(layerId, layerData, newParams = {}) {
-    // GloFAS layers with requiresTime manage their own time — ignore external time updates
     const meta = layerData.metadata || (window.layerMetadata && window.layerMetadata[layerId]);
+    // GloFAS layers with requiresTime need date-only format (YYYY-MM-DDT00:00:00), not full ISO
     if (meta && meta.requiresTime && newParams.time !== undefined) {
-        delete newParams.time;
+        newParams.time = newParams.time.split('T')[0] + 'T00:00:00';
     }
 
     // LAZY LOADING GUARD: If layer is hidden, only update state – don't send tile requests.
@@ -1758,9 +1773,12 @@ function refreshLayerTiles(layerId, layerData, newParams = {}) {
     console.log(`🔄 [WMS UPDATE] Layer ${layerId} updating params:`, wmsUpdate);
 
     if (Object.keys(wmsUpdate).length) {
+        // setParams(params, noRedraw=false) already calls redraw() internally
         layerData.wmsLayer.setParams(wmsUpdate, false);
+    } else {
+        // No params changed — explicit redraw needed (e.g. re-adding hidden layer)
+        layerData.wmsLayer.redraw();
     }
-    layerData.wmsLayer.redraw();
     console.log(`✅ [WMS UPDATE] Layer ${layerId} redrawn. Current WMS Params:`, layerData.wmsLayer.wmsParams);
 }
 
