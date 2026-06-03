@@ -611,6 +611,18 @@ document.addEventListener('click', function (e) {
     img.style.maxWidth = 'none';
 });
 
+// Global set of layerIds whose last tile load cycle had 0 successes.
+// Overlay shows when ANY layer is in this set; hides when the set is empty.
+const _layersWithNoData = new Set();
+
+function _updateNoDataOverlay() {
+    if (_layersWithNoData.size > 0) {
+        if (window.showNoDataOverlay) window.showNoDataOverlay(0);
+    } else {
+        if (window.hideNoDataOverlay) window.hideNoDataOverlay();
+    }
+}
+
 // Add a layer
 function addLayer(layerId) {
     console.log('✅ Adding layer:', layerId);
@@ -671,7 +683,12 @@ function addLayer(layerId) {
     }
 
     if (metadata && metadata.type === 'static') {
-        initialTime = null;
+        // Use current global time so tiles match the selected date immediately on add.
+        // Fall back to null only if no global time is set yet.
+        const sel = document.getElementById('time-select');
+        initialTime = (sel && sel.value && sel.value.length >= 16)
+            ? sel.value + ':00.000Z'
+            : null;
     }
 
     let initialElevation = 0;
@@ -770,7 +787,7 @@ function addLayer(layerId) {
         transparent: true,
         version: '1.3.0',
         ...(isGlofas ? (glofasTime ? { time: glofasTime } : {}) : {
-            ...(params.time && metadata.type !== 'static' ? { time: params.time } : {}),
+            ...(params.time ? { time: params.time } : {}),
             ...(metadata.hasElevation ? { elevation: params.elevation } : {})
         })
     };
@@ -816,24 +833,29 @@ function addLayer(layerId) {
         if (!isAborted) tileErrorCount++;
     });
 
-    // Track successful tile loads — hide overlay as soon as any tile arrives
-    wmsLayer.on('tileload', function () {
-        tileSuccessCount++;
-        if (window.hideNoDataOverlay) window.hideNoDataOverlay();
-    });
-
-    // New load cycle started — reset counters and clear stale overlay
+    // New load cycle started — optimistically remove this layer from failing set
     wmsLayer.on('loading', function () {
         tileErrorCount = 0;
         tileSuccessCount = 0;
-        if (window.hideNoDataOverlay) window.hideNoDataOverlay();
+        _layersWithNoData.delete(layerId);
+        _updateNoDataOverlay();
     });
 
-    // All tiles finished — show overlay only if every single tile failed
+    // At least one tile succeeded — this layer has data
+    wmsLayer.on('tileload', function () {
+        tileSuccessCount++;
+        _layersWithNoData.delete(layerId);
+        _updateNoDataOverlay();
+    });
+
+    // All tiles finished — if every tile failed, mark this layer as no-data
     wmsLayer.on('load', function () {
         if (tileSuccessCount === 0 && tileErrorCount > 0) {
-            if (window.showNoDataOverlay) window.showNoDataOverlay(0);
+            _layersWithNoData.add(layerId);
+        } else {
+            _layersWithNoData.delete(layerId);
         }
+        _updateNoDataOverlay();
     });
 
     // Store layer data
@@ -907,6 +929,10 @@ function removeLayer(layerId) {
         }
         layerTransitions.delete(layerId);
     }
+
+    // Remove from no-data tracking — if this was the only failing layer, hide overlay
+    _layersWithNoData.delete(layerId);
+    _updateNoDataOverlay();
 
     // Remove from map
     if (window.map && window.map.hasLayer(layerData.wmsLayer)) {
@@ -1527,7 +1553,7 @@ function checkAllLayersAvailability() {
 
     if (hasData) {
         console.log('✅ Data available in at least one layer');
-        if (window.hideNoDataOverlay) window.hideNoDataOverlay();
+        // Do NOT hide overlay here — tile events manage it
     } else {
         console.warn('⚠️ No data available in any active layer (Metadata check)');
         // DISABLED: Do not show overlay based on metadata alone

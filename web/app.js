@@ -508,8 +508,7 @@ function hideNoDataOverlay() {
 function showLoadingOverlay() {
     const overlay = document.getElementById('loading-overlay');
     if (overlay) overlay.style.display = 'flex';
-    // Ensure No Data is hidden when Loading starts
-    if (window.hideNoDataOverlay) window.hideNoDataOverlay();
+    // Do NOT hide no-data overlay here — tile load/error events manage it independently
 }
 
 function hideLoadingOverlay() {
@@ -914,11 +913,12 @@ async function checkDataAvailability() {
 
     if (isAvailable) {
         console.log('✅ Data available (Metadata Verified)');
-        if (window.hideNoDataOverlay) window.hideNoDataOverlay();
+        // Do NOT hide overlay here — tile load events manage it.
+        // Metadata says "in range" but GeoServer may still return 400 for specific dates.
         return true;
     } else {
         console.warn('⚠️ Data UNAVAILABLE (Metadata Verified)');
-        showNoDataOverlay();
+        // Do NOT show overlay here either — let actual tile failures decide.
         return false;
     }
 }
@@ -1515,7 +1515,7 @@ window.autoPreloadVideoLayer = async function (layerId, _retryCount = 0) {
             return; // base WMS still renders on-the-fly; overlay handled by tile load/error events
         }
     }
-    hideNoDataOverlay();
+    // Do NOT hide overlay here — tile events manage it independently of preload status
 
     const prevLayer = currentParams.layer;
     const prevTime = currentParams.time;
@@ -2293,6 +2293,7 @@ document.getElementById('date-prev').addEventListener('click', () => {
     if (hs.value === '12') {
         setHour('00');
     } else {
+        if (ds.min && ds.value <= ds.min) return; // already at min date
         const d = new Date(ds.value);
         d.setUTCDate(d.getUTCDate() - 1);
         ds.value = d.toISOString().slice(0, 10);
@@ -2307,6 +2308,7 @@ document.getElementById('date-next').addEventListener('click', () => {
     if (hs.value === '00') {
         setHour('12');
     } else {
+        if (ds.max && ds.value >= ds.max) return; // already at max date
         const d = new Date(ds.value);
         d.setUTCDate(d.getUTCDate() + 1);
         ds.value = d.toISOString().slice(0, 10);
@@ -2343,17 +2345,22 @@ document.addEventListener('keydown', (e) => {
     if (e.shiftKey) {
         const d = new Date(ds.value);
         d.setUTCDate(d.getUTCDate() + dir);
-        ds.value = d.toISOString().slice(0, 10);
+        const next = d.toISOString().slice(0, 10);
+        if (dir === 1 && ds.max && next > ds.max) return;
+        if (dir === -1 && ds.min && next < ds.min) return;
+        ds.value = next;
         syncSplitDateToProxy();
     } else {
         if (dir === 1 && hs.value === '00') { setHour('12'); }
         else if (dir === 1 && hs.value === '12') {
+            if (ds.max && ds.value >= ds.max) return;
             const d = new Date(ds.value);
             d.setUTCDate(d.getUTCDate() + 1);
             ds.value = d.toISOString().slice(0, 10);
             setHour('00');
         } else if (dir === -1 && hs.value === '12') { setHour('00'); }
         else if (dir === -1 && hs.value === '00') {
+            if (ds.min && ds.value <= ds.min) return;
             const d = new Date(ds.value);
             d.setUTCDate(d.getUTCDate() - 1);
             ds.value = d.toISOString().slice(0, 10);
