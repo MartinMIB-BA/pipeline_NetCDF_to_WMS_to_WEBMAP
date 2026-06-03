@@ -2286,23 +2286,33 @@ function syncSplitDateToProxy() {
 document.getElementById('date-select').addEventListener('change', syncSplitDateToProxy);
 document.getElementById('hour-select').addEventListener('change', syncSplitDateToProxy);
 
-// Stepper logic for Date/Time navigation
+// Stepper logic for Date/Time navigation — half-day steps (00:00 ↔ 12:00)
 document.getElementById('date-prev').addEventListener('click', () => {
     const ds = document.getElementById('date-select');
-    if (!ds || !ds.value) return;
-    const d = new Date(ds.value);
-    d.setUTCDate(d.getUTCDate() - 1);
-    ds.value = d.toISOString().slice(0, 10);
-    syncSplitDateToProxy();
+    const hs = document.getElementById('hour-select');
+    if (!ds || !ds.value || !hs) return;
+    if (hs.value === '12') {
+        setHour('00');
+    } else {
+        const d = new Date(ds.value);
+        d.setUTCDate(d.getUTCDate() - 1);
+        ds.value = d.toISOString().slice(0, 10);
+        setHour('12');
+    }
 });
 
 document.getElementById('date-next').addEventListener('click', () => {
     const ds = document.getElementById('date-select');
-    if (!ds || !ds.value) return;
-    const d = new Date(ds.value);
-    d.setUTCDate(d.getUTCDate() + 1);
-    ds.value = d.toISOString().slice(0, 10);
-    syncSplitDateToProxy();
+    const hs = document.getElementById('hour-select');
+    if (!ds || !ds.value || !hs) return;
+    if (hs.value === '00') {
+        setHour('12');
+    } else {
+        const d = new Date(ds.value);
+        d.setUTCDate(d.getUTCDate() + 1);
+        ds.value = d.toISOString().slice(0, 10);
+        setHour('00');
+    }
 });
 
 // Hour toggle buttons
