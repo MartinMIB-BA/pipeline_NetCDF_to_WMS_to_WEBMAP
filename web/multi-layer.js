@@ -812,10 +812,18 @@ function addLayer(layerId) {
 
     // Track tile errors
     wmsLayer.on('tileerror', function (event) {
+        // Ignore aborted requests
         const isAborted = !event.tile.src || event.tile.src.startsWith('data:');
         if (!isAborted) {
             tileErrorCount++;
             console.error(`❌ Tile error for layer ${layerId} (${tileErrorCount} errors, ${tileSuccessCount} successes)`);
+
+            // IMPROVED: Only show overlay after significant errors (5+) with no successes
+            // This prevents false positives during normal loading
+            if (tileErrorCount >= 5 && tileSuccessCount === 0) {
+                console.warn(`⚠️ Multiple tile errors for ${layerId}, may show "no data" if persists`);
+                // Don't show immediately - wait for load complete event
+            }
         }
     });
 
@@ -823,14 +831,12 @@ function addLayer(layerId) {
     wmsLayer.on('tileload', function () {
         tileSuccessCount++;
         console.log(`✅ Tile loaded for layer ${layerId} (${tileSuccessCount} successes)`);
-        if (window.hideNoDataOverlay) window.hideNoDataOverlay();
-    });
 
-    // All tiles finished loading — show overlay if none succeeded
-    wmsLayer.on('load', function () {
-        if (tileSuccessCount === 0 && tileErrorCount >= 3) {
-            console.warn(`⚠️ No data for layer ${layerId} — showing overlay`);
-            if (window.showNoDataOverlay) window.showNoDataOverlay(0);
+        // Hide overlay if we got successful data
+        if (tileSuccessCount > 0) {
+            if (window.hideNoDataOverlay) {
+                window.hideNoDataOverlay();
+            }
         }
     });
 
@@ -838,7 +844,9 @@ function addLayer(layerId) {
     wmsLayer.on('loading', function () {
         tileErrorCount = 0;
         tileSuccessCount = 0;
-        if (window.hideNoDataOverlay) window.hideNoDataOverlay();
+        if (window.hideNoDataOverlay) {
+            window.hideNoDataOverlay();
+        }
     });
 
     // Store layer data

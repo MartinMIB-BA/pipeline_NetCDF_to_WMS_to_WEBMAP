@@ -1512,7 +1512,8 @@ window.autoPreloadVideoLayer = async function (layerId, _retryCount = 0) {
         const dateStr = (layerData.time || '').slice(0, 10);
         if (dateStr && !window.wmsMetadata.readyDates.has(dateStr)) {
             console.log(`⏭️ [PRELOAD] Skipping ${layerId} — date ${dateStr} not in readyDates`);
-            return; // base WMS layer still renders on-the-fly; overlay is not appropriate here
+            showNoDataOverlay(0); // immediate — we know for certain there's no cached data
+            return;
         }
     }
     hideNoDataOverlay();
