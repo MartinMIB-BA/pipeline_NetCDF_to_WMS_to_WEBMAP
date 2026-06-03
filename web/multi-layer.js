@@ -1570,7 +1570,8 @@ document.addEventListener('DOMContentLoaded', function () {
     // the legacy wmsLayer, NOT the multi-layer activeLayers tiles.
     const timeSelect = document.getElementById('time-select');
     if (timeSelect) {
-        // Debounced tile refresh — prevents flooding server on rapid date clicks
+        // Debounced tile refresh — prevents double-trigger from dual listeners (app.js + multi-layer.js)
+        // 50ms is enough to collapse same-tick duplicates without blocking rapid arrow navigation
         const debouncedTimeRefresh = debounce((newTime, rawValue) => {
             activeLayers.forEach((layerData, layerId) => {
                 refreshLayerTiles(layerId, layerData, { time: newTime });
@@ -1578,7 +1579,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 if (individualInput) individualInput.value = rawValue;
             });
             checkAllLayersAvailability();
-        }, 200);
+        }, 50);
 
         timeSelect.addEventListener('change', function () {
             if (!this.value || this.value.length < 16) return;
