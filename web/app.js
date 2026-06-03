@@ -2073,35 +2073,30 @@ function updateGlobalDateControlsForLayer(layerId, reason = '') {
     const currentDate = dateInput.value;
     const currentHour = hourSelect.value || '00';
 
-    // Use full capabilities range for calendar min/max so users can browse all dates.
-    // getAvailableDatesForLayer returns only ready-seeded dates (for snapping logic below),
-    // but the calendar itself must not be locked to that narrow window.
-    const fullDates = window.wmsMetadata.getFullDatesForLayer(layerId);
-    if (fullDates.length > 0) {
-        dateInput.min = fullDates[0];
-        dateInput.max = fullDates[fullDates.length - 1];
-    }
+    // Calendar bounds = first/last readyDate — arrows and keyboard already enforce this
+    dateInput.min = dates[0];
+    dateInput.max = dates[dates.length - 1];
 
-    let nextDate = currentDate;
-    if (!dates.includes(currentDate)) {
-        nextDate = findClosestDate(currentDate, dates) || dates[dates.length - 1];
-    }
+    // No snapping — keep user's selected date as-is.
+    // If the date has no data, the tile load/error events will show the overlay.
+    const nextDate = currentDate;
 
-    const rawAvailableHours = window.wmsMetadata.getAvailableHoursForLayerDate(layerId, nextDate);
     const hours = ['00', '12'];
 
-    // parseDurationToMs can't parse months/weeks (e.g. P4M1W2DT8H) → falls back to 24h step
-    // → only ["00"] returned for every date. Apply smart fallback:
-    // non-last dates always have both hours; last date: check actual latest time.
-    let availableHours = rawAvailableHours;
-    if (rawAvailableHours.length <= 1) {
-        const isLastDate = dates[dates.length - 1] === nextDate;
-        if (isLastDate) {
-            const latestTime = window.wmsMetadata.getLatestTimeForLayer(layerId);
-            const lastHour = latestTime ? new Date(latestTime).getUTCHours() : 0;
-            availableHours = lastHour < 12 ? ['00'] : ['00', '12'];
+    // For dates in readyDates: check actual available hours.
+    // For dates in range but not in readyDates: default to both hours.
+    let availableHours = hours;
+    if (dates.includes(nextDate)) {
+        const rawAvailableHours = window.wmsMetadata.getAvailableHoursForLayerDate(layerId, nextDate);
+        if (rawAvailableHours.length > 1) {
+            availableHours = rawAvailableHours;
         } else {
-            availableHours = ['00', '12'];
+            const isLastDate = dates[dates.length - 1] === nextDate;
+            if (isLastDate) {
+                const latestTime = window.wmsMetadata.getLatestTimeForLayer(layerId);
+                const lastHour = latestTime ? new Date(latestTime).getUTCHours() : 0;
+                availableHours = lastHour < 12 ? ['00'] : ['00', '12'];
+            }
         }
     }
 
