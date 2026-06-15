@@ -2073,9 +2073,12 @@ function updateGlobalDateControlsForLayer(layerId, reason = '') {
     const currentDate = dateInput.value;
     const currentHour = hourSelect.value || '00';
 
-    // Calendar bounds = first/last readyDate — arrows and keyboard already enforce this
-    dateInput.min = dates[0];
-    dateInput.max = dates[dates.length - 1];
+    // Calendar bounds = full WMS capabilities range (on-the-fly dates, not just pre-seeded)
+    const fullDates = window.wmsMetadata.getFullDatesForLayer(layerId);
+    if (fullDates.length > 0) {
+        dateInput.min = fullDates[0];
+        dateInput.max = fullDates[fullDates.length - 1];
+    }
 
     // No snapping — keep user's selected date as-is.
     // If the date has no data, the tile load/error events will show the overlay.
