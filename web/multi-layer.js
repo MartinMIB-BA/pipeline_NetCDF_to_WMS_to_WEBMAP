@@ -304,8 +304,8 @@ function initializeLayerBubbleBar() {
                     </div>
                     <div style="border-top: 1px solid rgba(59,130,246,0.14); padding-top: 10px; margin-top: 10px;">
                         <p style="font-size: 10px; color: var(--text-faint); line-height: 1.5;">
-                            Data source: Copernicus EMS<br>
-                            Developed by MIB-BA
+                            Data source: Copernicus<br>
+                            Developed by EGM Team
                         </p>
                     </div>
                 </div>
