@@ -71,6 +71,7 @@ const layerDisplayNames = {
 };
 
 const LAYER_BUBBLE_CATEGORIES = [
+    { key: 'about', label: 'ABOUT', icon: 'fa-circle-info', type: 'about' },
     { key: 'static', label: 'RETURN PERIODS', icon: 'fa-layer-group', type: 'static' },
     { key: 'coastal', label: 'COASTAL POINTS', icon: 'fa-location-dot', type: 'points' },
     { key: 'video', label: 'FORECAST', icon: 'fa-film', type: 'video' },
@@ -271,17 +272,55 @@ function initializeLayerBubbleBar() {
         const shell = document.createElement('div');
         shell.className = 'layer-bubble-slot';
         shell.setAttribute('data-category', category.key);
+        shell.setAttribute('data-label', category.label);
 
         let itemsHtml = '';
-        layerIds.forEach(layerId => {
-            const displayName = layerDisplayNames[layerId] || layerId;
-            itemsHtml += `
-                <div class="layer-bubble-item" data-layer-id="${layerId}" style="cursor: pointer;">
-                    <span class="layer-bubble-item-name">${displayName}</span>
-                    <button type="button" class="layer-bubble-toggle" id="bubble-toggle-${category.key}-${layerId}" data-category="${category.key}" aria-pressed="false" style="pointer-events: none;"><i class="fa-solid fa-check" style="opacity: 0;"></i></button>
+
+        // Special "About" category — shows info content instead of layers
+        if (category.type === 'about') {
+            itemsHtml = `
+                <div style="padding: 4px 0;">
+                    <h4 style="font-size: 13px; font-weight: 700; color: var(--text-main); margin-bottom: 10px;">Copernicus EMS – Coastal Flood Forecasting</h4>
+                    <p style="font-size: 12px; color: var(--text-dim); line-height: 1.6; margin-bottom: 12px;">
+                        This web application provides coastal flood forecasting visualisation based on Copernicus Emergency Management Service data.
+                    </p>
+                    <div style="border-top: 1px solid rgba(59,130,246,0.14); padding-top: 10px; margin-top: 10px;">
+                        <p style="font-size: 11px; color: var(--text-dim); line-height: 1.5; margin-bottom: 8px;">
+                            <i class="fa-solid fa-layer-group" style="color: var(--primary); margin-right: 6px;"></i>
+                            <strong>Return Periods</strong> — Probability maps for 10yr, 100yr, 500yr events
+                        </p>
+                        <p style="font-size: 11px; color: var(--text-dim); line-height: 1.5; margin-bottom: 8px;">
+                            <i class="fa-solid fa-location-dot" style="color: var(--primary); margin-right: 6px;"></i>
+                            <strong>Coastal Points</strong> — Point-based coastal exceedance probabilities
+                        </p>
+                        <p style="font-size: 11px; color: var(--text-dim); line-height: 1.5; margin-bottom: 8px;">
+                            <i class="fa-solid fa-film" style="color: var(--primary); margin-right: 6px;"></i>
+                            <strong>Forecast</strong> — 15-day animated water level forecasts
+                        </p>
+                        <p style="font-size: 11px; color: var(--text-dim); line-height: 1.5; margin-bottom: 8px;">
+                            <i class="fa-solid fa-water" style="color: #fbbf24; margin-right: 6px;"></i>
+                            <strong>GloFAS</strong> — Global Flood Awareness System layers
+                        </p>
+                    </div>
+                    <div style="border-top: 1px solid rgba(59,130,246,0.14); padding-top: 10px; margin-top: 10px;">
+                        <p style="font-size: 10px; color: var(--text-faint); line-height: 1.5;">
+                            Data source: Copernicus EMS<br>
+                            Developed by MIB-BA
+                        </p>
+                    </div>
                 </div>
             `;
-        });
+        } else {
+            layerIds.forEach(layerId => {
+                const displayName = layerDisplayNames[layerId] || layerId;
+                itemsHtml += `
+                    <div class="layer-bubble-item" data-layer-id="${layerId}" style="cursor: pointer;">
+                        <span class="layer-bubble-item-name">${displayName}</span>
+                        <button type="button" class="layer-bubble-toggle" id="bubble-toggle-${category.key}-${layerId}" data-category="${category.key}" aria-pressed="false" style="pointer-events: none;"><i class="fa-solid fa-check" style="opacity: 0;"></i></button>
+                    </div>
+                `;
+            });
+        }
 
         shell.innerHTML = `
             <button type="button" class="layer-bubble-trigger" id="layer-bubble-trigger-${category.key}">
@@ -290,34 +329,28 @@ function initializeLayerBubbleBar() {
                 <span id="layer-bubble-count-${category.key}" class="layer-bubble-count" style="display:none;">0</span>
                 <i class="fa-solid fa-chevron-down"></i>
             </button>
-            <div class="layer-bubble-menu" id="layer-bubble-menu-${category.key}">
-                ${itemsHtml}
-            </div>
         `;
         wrap.appendChild(shell);
+
+        // Create drawer menu as sibling of bubble bar (outside it) so z-index stacking works
+        const menu = document.createElement('div');
+        menu.className = 'layer-bubble-menu';
+        menu.id = `layer-bubble-menu-${category.key}`;
+        menu.setAttribute('data-title', category.label);
+        menu.setAttribute('data-category', category.key);
+        menu.innerHTML = itemsHtml;
+        wrap.parentElement.appendChild(menu);
     });
 
     const closeAllMenus = () => {
         document.querySelectorAll('.layer-bubble-slot.open').forEach(slot => slot.classList.remove('open'));
+        document.querySelectorAll('.layer-bubble-menu.open').forEach(menu => menu.classList.remove('open'));
+        wrap.classList.remove('drawer-open');
     };
 
     const fitBubbleMenuToContent = (slot) => {
+        // Windy-style: flyout is full viewport height, no sizing needed
         if (!slot) return;
-        const menu = slot.querySelector('.layer-bubble-menu');
-        const trigger = slot.querySelector('.layer-bubble-trigger');
-        if (!menu || !trigger) return;
-
-        // Reset first so we can measure natural content height
-        menu.style.maxHeight = '';
-
-        const triggerRect = trigger.getBoundingClientRect();
-        const naturalHeight = menu.scrollHeight;
-        const viewportPadding = 16;
-        const availableHeight = Math.max(120, window.innerHeight - triggerRect.bottom - viewportPadding);
-        const targetHeight = Math.min(naturalHeight, availableHeight);
-
-        menu.style.maxHeight = `${targetHeight}px`;
-        menu.style.overflowY = naturalHeight > availableHeight ? 'auto' : 'hidden';
     };
 
     document.querySelectorAll('.layer-bubble-trigger').forEach(trigger => {
@@ -326,18 +359,21 @@ function initializeLayerBubbleBar() {
             e.stopPropagation();
             const slot = this.closest('.layer-bubble-slot');
             if (!slot) return;
+            const categoryKey = slot.getAttribute('data-category');
+            const menu = document.getElementById(`layer-bubble-menu-${categoryKey}`);
             const wasOpen = slot.classList.contains('open');
             closeAllMenus();
             if (!wasOpen) {
                 slot.classList.add('open');
-                fitBubbleMenuToContent(slot);
+                if (menu) menu.classList.add('open');
+                wrap.classList.add('drawer-open');
             }
         });
     });
 
     document.addEventListener('click', function (e) {
-        // Do not close if the click originated inside the layer bubble bar
-        if (e.target.closest('#layer-bubble-bar')) return;
+        // Do not close if the click originated inside the layers panel (icons + drawer menus)
+        if (e.target.closest('.layers-panel')) return;
         closeAllMenus();
     });
 
@@ -346,8 +382,10 @@ function initializeLayerBubbleBar() {
         if (openSlot) fitBubbleMenuToContent(openSlot);
     });
 
-    // Event delegation on wrap — catches ALL item clicks, even inside dynamically set innerHTML
-    wrap.addEventListener('click', function (e) {
+    // Event delegation — catches ALL item clicks in drawer menus
+    // Menus are now siblings of the bubble bar inside .layers-panel
+    const layersPanel = wrap.parentElement;
+    layersPanel.addEventListener('click', function (e) {
         const item = e.target.closest('.layer-bubble-item');
         if (!item) return;
 
