@@ -46,11 +46,14 @@ echo "========================================"
 
 WMS_OK=true
 NOTHING_NEW=false
+PARTIAL=false
 python "$SCRIPT_DIR/run_all_wms.py" --use-url 2>&1 | tee -a "$LOG_FILE"
 WMS_EXIT=${PIPESTATUS[0]}
 
 if [ "$WMS_EXIT" -eq 2 ]; then
     NOTHING_NEW=true
+elif [ "$WMS_EXIT" -eq 3 ]; then
+    PARTIAL=true
 elif [ "$WMS_EXIT" -ne 0 ]; then
     WMS_OK=false
 fi
@@ -59,6 +62,8 @@ fi
 echo ""
 if [ "$NOTHING_NEW" = true ]; then
     echo "  WMS finished at $(date)  [status: NOTHING NEW]"
+elif [ "$PARTIAL" = true ]; then
+    echo "  WMS finished at $(date)  [status: PARTIAL — some files failed, some succeeded]"
 else
     echo "  WMS finished at $(date)  [status: $([ "$WMS_OK" = true ] && echo OK || echo FAILED)]"
 fi
@@ -74,7 +79,7 @@ if [ "$NOTHING_NEW" = true ]; then
     echo "  GWC Tile Seeding: SKIPPED (no new files)"
     echo "========================================"
     } | tee -a "$LOG_FILE"
-elif [ "$WMS_OK" = true ]; then
+elif [ "$WMS_OK" = true ] || [ "$PARTIAL" = true ]; then
     {
     echo ""
     echo "========================================"
@@ -89,6 +94,13 @@ elif [ "$WMS_OK" = true ]; then
     {
     echo ""
     echo "  Seeding finished at $(date)  [status: $([ "$SEED_OK" = true ] && echo OK || echo FAILED)]"
+    echo "========================================"
+    } | tee -a "$LOG_FILE"
+else
+    {
+    echo ""
+    echo "========================================"
+    echo "  GWC Tile Seeding: SKIPPED (WMS processing failed entirely)"
     echo "========================================"
     } | tee -a "$LOG_FILE"
 fi
@@ -108,10 +120,28 @@ elif [ "$WMS_OK" = true ] && [ "$SEED_OK" = true ]; then
 
 Server: $(hostname)
 Log: $LOG_FILE"
+elif [ "$PARTIAL" = true ] && [ "$SEED_OK" = true ]; then
+    STATUS="warning"
+    SUBJECT="WMS + Seed ($RUN_TIME) — PARTIAL ⚠️"
+    BODY="WMS processing partially succeeded at $(date). Some files failed (likely corrupted on source), but successful files were seeded.
+
+Server: $(hostname)
+Log: $LOG_FILE
+
+Action: Review log for failed files. Corrupted source files will retry on next cron run."
+elif [ "$PARTIAL" = true ] && [ "$SEED_OK" = false ]; then
+    STATUS="failed"
+    SUBJECT="WMS + Seed ($RUN_TIME) — PARTIAL + Seeding FAILED ❌"
+    BODY="WMS processing partially succeeded, but GWC tile seeding FAILED at $(date).
+
+Server: $(hostname)
+Log: $LOG_FILE
+
+Action required: Review seed errors in the log."
 elif [ "$WMS_OK" = false ]; then
     STATUS="failed"
     SUBJECT="WMS + Seed ($RUN_TIME) — WMS FAILED ❌"
-    BODY="WMS processing FAILED at $(date). Seeding was skipped.
+    BODY="WMS processing FAILED at $(date). No files processed successfully. Seeding was skipped.
 
 Server: $(hostname)
 Log: $LOG_FILE
@@ -137,4 +167,6 @@ python "$SCRIPT_DIR/send_email_notification.py" \
 # Exit with error code if anything failed
 if [ "$WMS_OK" = false ] || [ "$SEED_OK" = false ]; then
     exit 1
+elif [ "$PARTIAL" = true ]; then
+    exit 3  # partial success: some source files were corrupted but seeding ran
 fi

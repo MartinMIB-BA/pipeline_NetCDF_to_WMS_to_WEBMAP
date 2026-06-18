@@ -268,7 +268,12 @@ def main():
     if use_tracking:
         print_stats()
     
-    return 0 if failed_count == 0 else 1
+    if failed_count == 0:
+        return 0  # all files processed successfully
+    elif processed_count > 0:
+        return 3  # partial success: some files processed, some failed
+    else:
+        return 1  # total failure: no files processed successfully
 
 
 if __name__ == "__main__":
