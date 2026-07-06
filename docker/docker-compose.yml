@@ -50,10 +50,13 @@ services:
       - geoserver
     ports:
       - "80:80"
+      - "8082:8082"
       - "443:443"
     volumes:
       - /opt/geoserver/web:/usr/share/nginx/html:ro
       - /opt/geoserver/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+      - /opt/geoserver/nginx/staging.conf:/etc/nginx/conf.d/staging.conf:ro
+      - /opt/geoserver/web_dev/web:/usr/share/nginx/html_dev:ro
       - /opt/geoserver/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
       - /opt/geoserver/monitoring/nginx_logs:/var/log/nginx
       - /etc/letsencrypt:/etc/letsencrypt:ro
