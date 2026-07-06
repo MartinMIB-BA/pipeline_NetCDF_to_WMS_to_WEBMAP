@@ -91,6 +91,9 @@ web_dev/
 web_lovable_template/
 # local puppeteer scratch test
 test.js
+# deploy scripts are run from the local machine, not versioned on the server
+deploy.sh
+deploy-staging.sh
 
 ### MONITORING ###
 monitoring/nginx_logs/
