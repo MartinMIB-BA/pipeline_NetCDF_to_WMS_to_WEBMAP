@@ -7,6 +7,7 @@
 ### IDE & EDITORS ###
 .idea/
 .vscode/
+.claude
 
 # Ignore distribution and build folders
 build/
@@ -24,6 +25,7 @@ wheels/
 *.egg-info/
 .installed.cfg
 *.egg
+/kiro
 
 # Exception for scripts library
 !scripts/lib/
@@ -80,6 +82,15 @@ web/old_versions/
 web/proxy_async.py
 web/ASYNC_PROXY_GUIDE.md
 web/proxy_debug.log
+
+### RUNTIME ARTIFACTS (generated on server, not versioned) ###
+# ready_dates.json is written by scripts/seed_tiles.py on each seed run
+web/ready_dates.json
+# staging clone + template dirs live inside the server checkout, not tracked here
+web_dev/
+web_lovable_template/
+# local puppeteer scratch test
+test.js
 
 ### MONITORING ###
 monitoring/nginx_logs/
