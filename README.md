@@ -77,6 +77,8 @@ Services started:
 | PostgreSQL | 5432 | PostGIS database |
 | PgBouncer | 6432 | Connection pooler |
 | Nginx | 80 | Reverse proxy + tile cache |
+| Nginx | 443 | HTTPS (Let's Encrypt) |
+| Nginx | 8082 | Staging environment |
 
 ### 2 — Set up the Python pipeline
 
@@ -148,7 +150,7 @@ Three layer types are published to GeoServer:
 | Type | Worker | Dimensions | Example Layer |
 |------|--------|------------|---------------|
 | Static | `static_wms.py` | TIME | `probabilityTWL10y_1_15` |
-| Video | `video_wms.py` | TIME | `episWL75`, `TWL75` |
+| Video | `video_wms.py` | TIME + ELEVATION | `epis_wl75`, `twl75` |
 | Points | `points_wms.py` | TIME + ELEVATION | `coastal_point_episWL10y` |
 
 All layers are published under GeoServer workspace `E_and_T`.

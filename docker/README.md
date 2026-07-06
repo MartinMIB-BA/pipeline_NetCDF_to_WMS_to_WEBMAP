@@ -9,9 +9,9 @@ Main service stack for the WMS pipeline. Runs PostgreSQL/PostGIS, GeoServer, PgB
 | Service | Image | Port | Description |
 |---------|-------|------|-------------|
 | `postgis` | `postgis/postgis:16-3.4` | 5432 | PostgreSQL 16 + PostGIS 3.4 |
-| `geoserver` | custom GeoServer 2.27.x | 8080 | WMS / WCS / REST API server |
+| `geoserver` | `docker.osgeo.org/geoserver:2.27.x` | 8080 | WMS / WCS / REST API server |
 | `pgbouncer` | `edoburu/pgbouncer` | 6432 | Connection pooler (transaction mode) |
-| `web` | `nginx:alpine` | 80 | Reverse proxy + tile cache + static files |
+| `web` | `nginx:alpine` | 80, 443, 8082 | Reverse proxy + tile cache + static files |
 
 ---
 
@@ -49,7 +49,7 @@ GeoServer with ImageMosaic support. Handles all WMS, WCS, and WFS requests.
 
 - **Data volume**: `/opt/geoserver/data/geoserver_data` → `/opt/geoserver/data_dir`
 - **Uploads volume**: `/opt/geoserver/data/uploads` → `/opt/geoserver/uploads`
-- **JVM heap**: 24 GB (`-Xms24g -Xmx24g`)
+- **JVM heap**: 12–24 GB (`-Xms12G -Xmx24G`)
 - **GC**: G1GC (`-XX:+UseG1GC`)
 - **Parallel threads**: 8
 - **Admin UI**: `http://localhost:8080/geoserver`
@@ -88,9 +88,14 @@ All data is stored outside containers on the host under `/opt/geoserver/`:
 | `/opt/geoserver/data/postgis_data` | `/var/lib/postgresql/data` | postgis | PostgreSQL data files |
 | `/opt/geoserver/data/geoserver_data` | `/opt/geoserver/data_dir` | geoserver | GeoServer config, stores, styles |
 | `/opt/geoserver/data/uploads` | `/opt/geoserver/uploads` | geoserver | GeoTIFF inputs from pipeline |
-| `/opt/geoserver/web` | `/usr/share/nginx/html` | web | Frontend HTML/JS |
-| `/opt/geoserver/nginx/` | `/etc/nginx/conf.d/` | web | Nginx config files |
+| `/opt/geoserver/web` | `/usr/share/nginx/html` | web | Frontend HTML/JS (production) |
+| `/opt/geoserver/web_dev/web` | `/usr/share/nginx/html_dev` | web | Frontend HTML/JS (staging) |
+| `/opt/geoserver/nginx/default.conf` | `/etc/nginx/conf.d/default.conf` | web | Nginx production config |
+| `/opt/geoserver/nginx/staging.conf` | `/etc/nginx/conf.d/staging.conf` | web | Nginx staging config |
+| `/opt/geoserver/nginx/nginx.conf` | `/etc/nginx/nginx.conf` | web | Nginx main config |
 | `/opt/geoserver/monitoring/nginx_logs` | `/var/log/nginx` | web | Nginx access logs (consumed by Promtail) |
+| `/etc/letsencrypt` | `/etc/letsencrypt` | web | SSL certificates |
+| `/opt/geoserver/data/nginx_cache` | `/var/cache/nginx/gwc_cache` | web | GWC tile cache |
 
 ---
 
@@ -157,6 +162,8 @@ docker-compose down -v
 | Port | Service | Accessible from |
 |------|---------|----------------|
 | 80 | Nginx (web + proxy) | External |
+| 443 | Nginx (HTTPS) | External |
+| 8082 | Nginx (staging) | External |
 | 8080 | GeoServer | Internal (proxied via Nginx) |
 | 5432 | PostgreSQL | Host only |
 | 6432 | PgBouncer | Host + containers |

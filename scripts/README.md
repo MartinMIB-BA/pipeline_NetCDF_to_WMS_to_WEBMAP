@@ -38,11 +38,11 @@ scripts/
 │   ├── video_wms.py        Processor for time-series video layers
 │   └── points_wms.py       Processor for coastal point data layers
 ├── run_all_wms.py          Main orchestrator
-├── run_wms_with_email.sh   Cron wrapper with email notification
+├── run_wms_and_seed.sh     Cron wrapper (WMS processing + GWC seeding + email)
 ├── send_email_notification.py  Gmail SMTP sender
-├── seed.py                 One-time database seeding utility
+├── seed_tiles.py           GeoWebCache tile seeding + nginx warmup
+├── backfill.py             Historical data backfill utility
 ├── export_tracking.py      Export tracking log to CSV
-├── debug_auth.py           GeoServer authentication debugger
 ├── monitor_storage.sh      Disk space monitoring script
 ├── variable_mapping.json   NetCDF variable name → GeoServer layer name map
 ├── wms_crontab.txt         Cron job definitions
@@ -64,8 +64,8 @@ python run_all_wms.py [OPTIONS]
 | `--use-url` | Discover and download files from `BASE_URL` (default mode) |
 | `--force-reprocess` | Ignore tracking DB and reprocess all files |
 | `--reset-file FILENAME` | Reset one specific file back to pending |
+| `--skip-file FILENAME` | Mark file as permanently skipped (corrupted/unavailable) |
 | `--stats` | Print processing statistics and exit |
-| `--workers WORKERS` | Comma-separated list of workers to run (default: `static,video,points`) |
 | `--reset-each-store` | Clear GeoServer ImageMosaic stores before each upload |
 | `--no-reharvest` | Skip the reharvest step after upload |
 | `--no-cleanup` | Keep working directory after processing |
@@ -80,8 +80,8 @@ python run_all_wms.py --use-url
 # Full reprocessing run
 python run_all_wms.py --use-url --force-reprocess --reset-each-store
 
-# Only run the static worker
-python run_all_wms.py --use-url --workers static
+# Skip a corrupted source file
+python run_all_wms.py --skip-file some_corrupted_file.nc
 
 # Check stats
 python run_all_wms.py --stats
@@ -103,8 +103,9 @@ Processes return-period probability maps (10y, 100y, 500y) as single time-step l
 
 Processes time-varying wave/water-level fields with 153 time steps.
 
-- Variables: `episWL75`, `TWL75` and related
+- Variables: `epis_wl75`, `twl75` and related
 - Each time step exported as a separate GeoTIFF
+- Dimensions: TIME + ELEVATION
 - Results in animated/time-slider WMS layers
 
 ### `points_wms.py` — Coastal Point Data
@@ -128,7 +129,7 @@ Key exported values:
 - `PG_HOST_LOCAL`, `PG_PORT`, `PG_DB`, `PG_USER`, `PG_PASS`
 - `BASE_URL`, `OUTPUT_ROOT`, `INPUT_DIR`
 - `AUTO_CLEANUP`, `USE_URL_DOWNLOAD`
-- `PERIODS_TO_PROCESS` — list of return periods to process
+- `PERIODS_TO_PROCESS` — list of `(year, month)` tuples to scan on the JRC FTP server
 
 ### `lib/download.py`
 
@@ -149,11 +150,17 @@ REST API client for GeoServer. Key operations:
 
 ### `lib/postgis.py`
 
-Creates and manages PostGIS schemas used as ImageMosaic index tables. Creates one schema per layer with:
+Creates and manages PostGIS schemas used as ImageMosaic index tables.
+
+Key functions:
+- `ensure_postgis_schema(schema, reset, ...)` — create or reset PostGIS schema for ImageMosaic index
+- `ensure_layer_indexes(schema, ...)` — create performance indexes on `ingestion` and `elevation` columns
+
+Each schema contains:
 - `the_geom` — bounding polygon (EPSG:4326)
 - `location` — path to the GeoTIFF granule
 - `ingestion` — timestamp (TIME dimension)
-- `elevation` — integer (ELEVATION dimension, points worker only)
+- `elevation` — integer (ELEVATION dimension, video + points workers)
 
 ### `lib/tracking.py`
 
@@ -167,26 +174,28 @@ Table: `wms_processing_log`
 | `issue_timestamp` | VARCHAR(12) | 12-char timestamp extracted from filename |
 | `file_url` | TEXT | Source URL |
 | `file_size_bytes` | BIGINT | File size |
-| `status` | VARCHAR(20) | `pending`, `downloading`, `processing`, `success`, `failed` |
+| `status` | VARCHAR(20) | `downloading`, `processing`, `success`, `failed`, `skipped` |
 | `layer_type` | VARCHAR(50) | `static`, `video`, or `points` |
 | `layers_processed` | TEXT[] | Array of published layer names |
 | `error_message` | TEXT | Error details on failure |
 
 Key functions:
 - `initialize_tracking_db()` — create table if not exists
-- `mark_file_pending(filename, url)` — register new file
+- `mark_file_downloading(filename, timestamp, url, size)` — register file download start
+- `mark_file_processing(filename, layer_type)` — mark as being processed
 - `mark_file_success(filename, layers)` — mark complete
 - `mark_file_failed(filename, error)` — record failure
-- `get_pending_files()` — list unprocessed files
+- `mark_file_skipped(filename, reason)` — permanently skip corrupted files
+- `get_unprocessed_files(file_list)` — filter list to only unprocessed files
 - `get_processing_stats()` — summary counts by status
 
 ### `lib/netcdf_utils.py`
 
 Utilities for reading and exporting NetCDF data:
-- Variable inspection (list variables, dimensions, shape)
-- Export one variable + time step to GeoTIFF (with CRS and bounds)
-- Batch export all time steps of a variable
-- Reads coordinate reference system from file metadata
+- `parse_issue_dt_12_from_nc(filename)` — extract 12-digit timestamp from NetCDF filename
+- `yyyymmddhhmm_to_iso(dt12)` — convert YYYYMMDDHHMM to ISO 8601 format
+- `ensure_lat_lon(da)` — ensure proper lat/lon dimensions for regular raster data
+- `ensure_lat_lon_da(da)` — ensure proper lat/lon dimensions for coastal point data
 
 ---
 
@@ -269,7 +278,7 @@ Schedule (all times local):
 | 08:00 | Pipeline run + email |
 | 13:00 | Pipeline run + email |
 | 20:00 | Pipeline run + email |
-| 09:00 | Disk space check |
+| 10:00 | Disk space check |
 
 Logs are written to `/opt/geoserver/logs/`.
 
