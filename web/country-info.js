@@ -46,9 +46,10 @@
                 transparent: true,
                 version: '1.1.1',
                 CQL_FILTER: cql,
-                styles: '',
+                styles: 'E_and_T:buffer_hatched',
                 pane: 'countryBufferPane',
-                opacity: 0.35
+                opacity: 0.7,
+                tileSize: 512
             }).addTo(map);
         }
     }
