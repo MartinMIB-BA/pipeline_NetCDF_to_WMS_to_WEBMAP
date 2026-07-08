@@ -275,13 +275,19 @@
         return html;
     }
 
-    // ── Click handler ───────────────────────────────────────────
-    async function handleCountryClick(e) {
-        // Create a promise that app.js raster handler will await
+    // Register click handler — MUST run before app.js handler processes.
+    // We set the promise synchronously so app.js (which runs in same tick) can see it.
+    map.on('click', function (e) {
+        // Synchronously set promise BEFORE any await — app.js will see it in same tick
         let resolveCountryCheck;
         window._countryCheckPromise = new Promise(r => { resolveCountryCheck = r; });
         window._countryClickHandled = false;
 
+        // Now do the async work
+        handleCountryClick(e, resolveCountryCheck);
+    });
+
+    async function handleCountryClick(e, resolveCountryCheck) {
         try {
             const props = await queryCountryInfo(e.latlng);
             if (!props) {
@@ -310,8 +316,6 @@
             closePanel();
         }
     }
-
-    map.on('click', handleCountryClick);
 
     // ── Inject CSS ──────────────────────────────────────────────
     const style = document.createElement('style');

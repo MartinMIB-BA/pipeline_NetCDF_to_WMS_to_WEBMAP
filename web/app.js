@@ -2778,8 +2778,9 @@ async function queryLayer(layerId, layerData, latlng, point, size, signal) {
 map.on('click', function (e) {
     console.log('🖱️ Map clicked at:', e.latlng);
     // Wait for country-info module to determine if click is on land.
-    // If on land, skip raster popup (country panel handles it).
+    // yield one microtask so country-info handler (registered later) sets its promise first.
     (async () => {
+        await Promise.resolve(); // yield to let country handler set _countryCheckPromise
         if (window._countryCheckPromise) {
             const isLand = await window._countryCheckPromise;
             if (isLand) {
