@@ -277,12 +277,18 @@
 
     // ── Click handler ───────────────────────────────────────────
     async function handleCountryClick(e) {
+        // Reset the flag — will be set to true if click lands on a country
+        window._countryClickHandled = false;
+
         try {
             const props = await queryCountryInfo(e.latlng);
             if (!props) {
                 closePanel();
                 return;
             }
+
+            // Mark that this click hit land — raster getFeatureInfo should not show popup
+            window._countryClickHandled = true;
 
             // Show buffer + highlight
             if (props.gid_0) {
