@@ -1848,7 +1848,7 @@ function stopAnimation() {
                     // Videos enforce 1.0 opacity natively, but safeguard just in case
                     layerData.wmsLayer.setOpacity(1.0);
 
-                    if (window.map && !window.map.hasLayer(layerData.wmsLayer)) {
+                    if (window.map && !window.map.hasLayer(layerData.wmsLayer) && !layerData.hidden) {
                         layerData.wmsLayer.addTo(window.map);
                     }
 
