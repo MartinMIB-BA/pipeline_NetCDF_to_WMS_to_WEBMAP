@@ -51,7 +51,8 @@ const layerDisplayNames = {
     'probability_twl_coast_01_03': 'Coastal TWL (1-3D)',
     'probability_twl_coast_04_15': 'Coastal TWL (4-15D)',
     // Country choropleth layers
-    'country_twl_rp10': 'Country Risk TWL RP10',
+    'country_epis_summary': 'Episodic Water Level Summary',
+    'country_twl_summary': 'Total Water Level Summary',
     // Video layers
     'epis_wl75': 'Episode WL 75',
 
@@ -152,7 +153,7 @@ function initializeLayerList() {
             'probability_twl_coast_01_15', 'probability_twl_coast_01_03', 'probability_twl_coast_04_15'
         ],
         '🗺️ COUNTRY RISK': [
-            'country_twl_rp10'
+            'country_epis_summary', 'country_twl_summary'
         ],
         '🎥 FORECAST': [
             'epis_wl75', 'twl75'
@@ -1773,9 +1774,9 @@ document.addEventListener('DOMContentLoaded', function () {
 
             // Auto-initialize default layers (bottom to top order):
             // 1. Country Risk choropleth (base context layer)
-            const choroplethCheckbox = document.getElementById('checkbox-country_twl_rp10');
+            const choroplethCheckbox = document.getElementById('checkbox-country_twl_summary');
             if (choroplethCheckbox && !choroplethCheckbox.checked) {
-                console.log('🚀 Auto-initializing default layer: country_twl_rp10');
+                console.log('🚀 Auto-initializing default layer: country_twl_summary');
                 choroplethCheckbox.click();
             }
 
