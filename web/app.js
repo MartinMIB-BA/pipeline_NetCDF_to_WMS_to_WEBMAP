@@ -2777,15 +2777,18 @@ async function queryLayer(layerId, layerData, latlng, point, size, signal) {
 // Add click handler to map
 map.on('click', function (e) {
     console.log('🖱️ Map clicked at:', e.latlng);
-    // Small delay to let country-info module resolve first (vector is faster than raster).
-    // If click lands on a country, _countryClickHandled will be true and we skip raster popup.
-    setTimeout(() => {
-        if (window._countryClickHandled) {
-            console.log('ℹ️ Click on land — skipping raster GetFeatureInfo popup');
-            return;
+    // Wait for country-info module to determine if click is on land.
+    // If on land, skip raster popup (country panel handles it).
+    (async () => {
+        if (window._countryCheckPromise) {
+            const isLand = await window._countryCheckPromise;
+            if (isLand) {
+                console.log('ℹ️ Click on land — skipping raster GetFeatureInfo popup');
+                return;
+            }
         }
         getFeatureInfo(e.latlng);
-    }, 300);
+    })();
 });
 
 // Global command to print performance summary (type in console: printPerformanceSummary())

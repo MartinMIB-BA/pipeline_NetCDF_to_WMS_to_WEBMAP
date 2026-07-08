@@ -277,18 +277,22 @@
 
     // ── Click handler ───────────────────────────────────────────
     async function handleCountryClick(e) {
-        // Reset the flag — will be set to true if click lands on a country
+        // Create a promise that app.js raster handler will await
+        let resolveCountryCheck;
+        window._countryCheckPromise = new Promise(r => { resolveCountryCheck = r; });
         window._countryClickHandled = false;
 
         try {
             const props = await queryCountryInfo(e.latlng);
             if (!props) {
                 closePanel();
+                resolveCountryCheck(false);
                 return;
             }
 
-            // Mark that this click hit land — raster getFeatureInfo should not show popup
+            // Mark that this click hit land
             window._countryClickHandled = true;
+            resolveCountryCheck(true);
 
             // Show buffer + highlight
             if (props.gid_0) {
@@ -302,6 +306,7 @@
 
         } catch (err) {
             console.warn('Country info query failed:', err);
+            resolveCountryCheck(false);
             closePanel();
         }
     }
