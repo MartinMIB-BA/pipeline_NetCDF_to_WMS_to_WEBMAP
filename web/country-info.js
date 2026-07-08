@@ -19,7 +19,7 @@
     function ensureBufferPane() {
         if (!map.getPane('countryBufferPane')) {
             map.createPane('countryBufferPane');
-            map.getPane('countryBufferPane').style.zIndex = 320; // below WMS data (350)
+            map.getPane('countryBufferPane').style.zIndex = 500; // above all WMS data layers
             map.getPane('countryBufferPane').style.pointerEvents = 'none';
         }
     }
@@ -164,45 +164,28 @@
         return html;
     }
 
-    // ── Main click handler — runs in PARALLEL with existing getFeatureInfo ──
-    // We hook into the same map click event, but only open a popup if no WMS
-    // raster layers are active (so existing functionality takes priority).
+    // ── Main click handler — ALWAYS shows country popup + buffer on land click ──
+    // Runs in parallel with existing getFeatureInfo (raster popup). Both popups
+    // use the same Leaflet popup slot so the country popup naturally replaces
+    // the raster one (or vice versa — whichever resolves last wins the popup).
+    // Country info is always relevant on land regardless of active layers.
     let countryPopup = null;
 
     async function handleCountryClick(e) {
-        // Only show country popup if NO active raster layers are loaded
-        // (so the standard getFeatureInfo popup takes priority when layers are active)
-        const hasActiveRasterLayers = (typeof activeLayers !== 'undefined' && activeLayers.size > 0);
-        if (hasActiveRasterLayers) {
-            // When raster layers are active, still show buffer but don't open popup
-            // (the existing getFeatureInfo will handle the popup)
-            try {
-                const props = await queryCountryInfo(e.latlng);
-                if (props && props.gid_0) {
-                    showBuffer(props.gid_0);
-                } else {
-                    hideBuffer();
-                }
-            } catch (_) {
-                hideBuffer();
-            }
-            return;
-        }
-
-        // No raster layers active — show full country popup + buffer
         try {
             const props = await queryCountryInfo(e.latlng);
             if (!props) {
+                // Click was in ocean (no country boundary) — hide buffer
                 hideBuffer();
                 return;
             }
 
-            // Show buffer overlay
+            // Show buffer overlay for this country
             if (props.gid_0) {
                 showBuffer(props.gid_0);
             }
 
-            // Show popup
+            // Show country forecast popup
             const content = buildPopupContent(props);
             if (countryPopup) {
                 map.closePopup(countryPopup);
