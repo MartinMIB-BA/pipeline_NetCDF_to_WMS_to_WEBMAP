@@ -735,6 +735,11 @@ function addLayer(layerId) {
             : null;
     }
 
+    // Choropleth layers (vector SQL Views) have NO time dimension
+    if (metadata && metadata.type === 'choropleth') {
+        initialTime = null;
+    }
+
     let initialElevation = 0;
     const isVideo = metadata && metadata.type === 'video';
 
@@ -833,7 +838,9 @@ function addLayer(layerId) {
         ...(isGlofas ? (glofasTime ? { time: glofasTime } : {}) : {
             ...(params.time ? { time: params.time } : {}),
             ...(metadata.hasElevation ? { elevation: params.elevation } : {})
-        })
+        }),
+        // Choropleth layers need explicit style (GeoServer default may be generic 'polygon')
+        ...(metadata.type === 'choropleth' && metadata.style ? { styles: metadata.style } : {})
     };
 
     if (isGwcLayer) {

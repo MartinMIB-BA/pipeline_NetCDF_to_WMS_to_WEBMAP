@@ -427,7 +427,7 @@ const layerMetadata = {
     'probability_twl_coast_04_15': { type: 'points', hasElevation: true, description: 'Coastal TWL probability (4-15D, with RP)' },
 
     // Country choropleth layers
-    'country_twl_rp10': { type: 'choropleth', hasElevation: false, description: 'Country risk — TWL exceedance probability RP 10yr (max over 1-47 day forecast)' },
+    'country_twl_rp10': { type: 'choropleth', hasElevation: false, style: 'E_and_T:choropleth_twl_rp10', description: 'Country risk — TWL exceedance probability RP 10yr (max over 1-47 day forecast)' },
 
     // Video layers
     'epis_wl75': { type: 'video', hasElevation: true, description: 'Episode water level 75th percentile (with lead time)' },
