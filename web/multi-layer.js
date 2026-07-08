@@ -1625,6 +1625,14 @@ document.addEventListener('DOMContentLoaded', function () {
     initializeLayerList();
     console.log('🎛️ Multi-layer system initialized');
 
+    // Auto-add default layer on startup
+    setTimeout(() => {
+        addLayer('country_twl_rp10');
+        updateLayerCount();
+        syncLayerBubbleState();
+        console.log('🗺️ Default layer loaded: country_twl_rp10');
+    }, 500);
+
     // ═══════════════════════════════════════════════════════════════
     // GLOBAL CONTROL LISTENERS
     // ═══════════════════════════════════════════════════════════════
