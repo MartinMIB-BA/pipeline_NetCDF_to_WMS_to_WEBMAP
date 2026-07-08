@@ -1625,14 +1625,6 @@ document.addEventListener('DOMContentLoaded', function () {
     initializeLayerList();
     console.log('🎛️ Multi-layer system initialized');
 
-    // Auto-add default layer on startup
-    setTimeout(() => {
-        addLayer('country_twl_rp10');
-        updateLayerCount();
-        syncLayerBubbleState();
-        console.log('🗺️ Default layer loaded: country_twl_rp10');
-    }, 500);
-
     // ═══════════════════════════════════════════════════════════════
     // GLOBAL CONTROL LISTENERS
     // ═══════════════════════════════════════════════════════════════
@@ -1779,17 +1771,25 @@ document.addEventListener('DOMContentLoaded', function () {
                 }
             }
 
-            // Auto-initialize GloFAS reporting points first so twl75 ends up on top of the panel
+            // Auto-initialize default layers (bottom to top order):
+            // 1. Country Risk choropleth (base context layer)
+            const choroplethCheckbox = document.getElementById('checkbox-country_twl_rp10');
+            if (choroplethCheckbox && !choroplethCheckbox.checked) {
+                console.log('🚀 Auto-initializing default layer: country_twl_rp10');
+                choroplethCheckbox.click();
+            }
+
+            // 2. GloFAS reporting points
             const reportingPointsCheckbox = document.getElementById('checkbox-reportingPoints');
             if (reportingPointsCheckbox && !reportingPointsCheckbox.checked) {
                 console.log('🚀 Auto-initializing default layer: reportingPoints');
                 reportingPointsCheckbox.click();
             }
 
-            // Now trigger the default layer load (it reads the time-select we just set)
+            // 3. TWL75 forecast (on top)
             if (defaultCheckbox && !defaultCheckbox.checked) {
                 console.log(`🚀 Auto-initializing default layer: ${defaultLayerId}`);
-                defaultCheckbox.click(); // Trigger native event pipeline
+                defaultCheckbox.click();
             }
         }).catch(err => {
             // Fallback: init anyway even if metadata fails
