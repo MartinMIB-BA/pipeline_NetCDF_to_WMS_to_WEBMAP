@@ -77,7 +77,7 @@ const LAYER_BUBBLE_CATEGORIES = [
     { key: 'about', label: 'ABOUT', icon: 'fa-circle-info', type: 'about' },
     { key: 'static', label: 'RETURN PERIODS', icon: 'fa-layer-group', type: 'static' },
     { key: 'coastal', label: 'COASTAL POINTS', icon: 'fa-location-dot', type: 'points' },
-    { key: 'choropleth', label: 'COUNTRY RISK', icon: 'fa-earth-europe', type: 'choropleth' },
+    { key: 'choropleth', label: 'COUNTRY HAZARD', icon: 'fa-earth-europe', type: 'choropleth' },
     { key: 'video', label: 'FORECAST', icon: 'fa-film', type: 'video' },
     { key: 'glofas', label: 'GloFAS', icon: 'fa-water', type: 'glofas' }
 ];
@@ -152,7 +152,7 @@ function initializeLayerList() {
             'probability_epis_coast_01_15', 'probability_epis_coast_01_03', 'probability_epis_coast_04_15',
             'probability_twl_coast_01_15', 'probability_twl_coast_01_03', 'probability_twl_coast_04_15'
         ],
-        '🗺️ COUNTRY RISK': [
+        '🗺️ COUNTRY HAZARD': [
             'country_epis_summary', 'country_twl_summary'
         ],
         '🎥 FORECAST': [
