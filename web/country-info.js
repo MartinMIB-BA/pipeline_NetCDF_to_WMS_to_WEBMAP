@@ -279,6 +279,14 @@
     // Register click handler — MUST run before app.js handler processes.
     // We set the promise synchronously so app.js (which runs in same tick) can see it.
     map.on('click', function (e) {
+        // Only show country panel if the risk layer is active
+        const riskLayerActive = typeof activeLayers !== 'undefined' && activeLayers.has('country_twl_rp10');
+        if (!riskLayerActive) {
+            window._countryCheckPromise = Promise.resolve(false);
+            window._countryClickHandled = false;
+            return;
+        }
+
         // Synchronously set promise BEFORE any await — app.js will see it in same tick
         let resolveCountryCheck;
         window._countryCheckPromise = new Promise(r => { resolveCountryCheck = r; });
