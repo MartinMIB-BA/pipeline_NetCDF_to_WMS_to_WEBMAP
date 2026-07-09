@@ -223,8 +223,25 @@
         // Add TIME from active choropleth layer (so popup shows correct week)
         if (typeof activeLayers !== 'undefined') {
             for (const [lid, ld] of activeLayers.entries()) {
-                if (ld.metadata && ld.metadata.type === 'choropleth' && ld.metadata.hasTime && ld.time) {
-                    params.set('TIME', ld.time);
+                if (ld.metadata && ld.metadata.type === 'choropleth' && ld.metadata.hasTime) {
+                    if (ld.time) {
+                        params.set('TIME', ld.time);
+                    } else {
+                        // Fallback: compute correct week from available weeks
+                        const weeks = (window._choroplethWeeks && window._choroplethWeeks[lid]) || [];
+                        if (weeks.length > 0) {
+                            const timeSelect = document.getElementById('time-select');
+                            const selectedDate = timeSelect && timeSelect.value
+                                ? new Date(timeSelect.value + ':00.000Z')
+                                : new Date();
+                            let matched = weeks[0];
+                            for (const w of weeks) {
+                                if (new Date(w) <= selectedDate) matched = w;
+                                else break;
+                            }
+                            params.set('TIME', matched);
+                        }
+                    }
                     break;
                 }
             }
