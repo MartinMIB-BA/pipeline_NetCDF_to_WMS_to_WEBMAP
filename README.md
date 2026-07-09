@@ -55,6 +55,14 @@ JRC-FLOODS FTP
 
 ---
 
+## Deployment Topology (server-side, important)
+
+There is **one** nginx container, **one** monitoring stack, and **one** cron — all driven from a single clone of this repo at `/opt/geoserver` on `main`, updated by `deploy.sh`. `nginx/`, `monitoring/`, and `scripts/` config only ever comes from there, regardless of whether you're hitting the production site (port 80) or staging (port 8082).
+
+`/opt/geoserver/web_dev` is a **second, separate** clone (own `.git`), tracking `develop`, updated by `deploy-staging.sh`. It's `git sparse-checkout`'d to only materialize `web/` on disk — that subfolder is the only thing any container reads (mounted read-only as `html_dev` for port 8082). Don't expect changes to `nginx/`, `monitoring/`, or `scripts/` on `develop` to take effect via staging deploys; that infra is singular and lives only on `main`. To test infra changes, deploy to `main` (`deploy.sh`) — there's no staging environment for it.
+
+---
+
 ## Quick Start
 
 ### Prerequisites
