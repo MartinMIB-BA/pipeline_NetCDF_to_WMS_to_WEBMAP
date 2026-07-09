@@ -224,25 +224,17 @@
         if (typeof activeLayers !== 'undefined') {
             for (const [lid, ld] of activeLayers.entries()) {
                 if (ld.metadata && ld.metadata.type === 'choropleth' && ld.metadata.hasTime) {
+                    // Best source: the actual WMS param currently being sent to GeoServer
+                    const wmsTime = ld.wmsLayer && ld.wmsLayer.wmsParams && ld.wmsLayer.wmsParams.time;
+                    if (wmsTime) {
+                        params.set('TIME', wmsTime);
+                        break;
+                    }
+                    // Fallback: layerData.time
                     if (ld.time) {
                         params.set('TIME', ld.time);
-                    } else {
-                        // Fallback: compute correct week from available weeks
-                        const weeks = (window._choroplethWeeks && window._choroplethWeeks[lid]) || [];
-                        if (weeks.length > 0) {
-                            const timeSelect = document.getElementById('time-select');
-                            const selectedDate = timeSelect && timeSelect.value
-                                ? new Date(timeSelect.value + ':00.000Z')
-                                : new Date();
-                            let matched = weeks[0];
-                            for (const w of weeks) {
-                                if (new Date(w) <= selectedDate) matched = w;
-                                else break;
-                            }
-                            params.set('TIME', matched);
-                        }
+                        break;
                     }
-                    break;
                 }
             }
         }
