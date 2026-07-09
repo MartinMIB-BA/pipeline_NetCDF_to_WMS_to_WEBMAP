@@ -17,10 +17,12 @@ import argparse
 import concurrent.futures
 import datetime
 import json
+import random
 import subprocess
 import sys
 import time
 import urllib.parse
+from collections import Counter
 
 import psycopg2
 import requests
@@ -313,30 +315,33 @@ process.stdout.write(JSON.stringify(results));
     return bboxes_fb
 
 
-def _warmup_single(session: requests.Session, layer: str,
-                   time_val: str, elev_val: str, bbox: tuple) -> bool:
-    """Fire one nginx warmup request. Returns True on HTTP 200.
+def _fmt_coord(v: float) -> str:
+    return str(int(v)) if v == int(v) else str(v)
+
+
+def _build_tile_url(layer: str, time_val: str, elev_val: str, bbox: tuple) -> str:
+    """
+    Build the exact tile URL the Leaflet preload system sends.
 
     IMPORTANT: bbox commas must be literal, NOT percent-encoded (%2C).
-    Nginx cache key = full URI string.  Leaflet sends raw commas in bbox,
+    Nginx cache key = full URI string. Leaflet sends raw commas in bbox,
     so we must do the same — using requests' params= would encode them as %2C
     and the cache keys would never match.
+
+    CRITICAL: parameter ORDER must match the exact order that the Leaflet preload
+    system sends, otherwise the nginx cache key (full URI string) won't match
+    and every request here (warm-up or verification) will be a cache MISS for
+    real app traffic. Order verified from actual browser network requests:
+    service, request, styles, format, transparent, version, tiled, SRS, srs,
+    width, height, layers, time, elevation  [bbox appended last]
+
+    Shared by _warmup_single() and _verify_single() so both always build the
+    identical URL — if this drifts from the browser, verify_nginx_warmup()
+    surfaces it as a low hit ratio instead of failing silently.
     """
     _, _col, _row, minX, minY, maxX, maxY = bbox
+    bbox_str = ','.join(_fmt_coord(v) for v in (minX, minY, maxX, maxY))
 
-    def _fmt(v: float) -> str:
-        return str(int(v)) if v == int(v) else str(v)
-
-    # Build bbox string with literal commas
-    bbox_str = ','.join(_fmt(v) for v in (minX, minY, maxX, maxY))
-
-    # Encode all other params normally, then append bbox manually.
-    # CRITICAL: parameter ORDER must match the exact order that the Leaflet preload
-    # system sends, otherwise the nginx cache key (full URI string) won't match
-    # and every warmup request will be a cache MISS for real app traffic.
-    # Order verified from actual browser network requests:
-    #   service, request, styles, format, transparent, version, tiled, SRS, srs,
-    #   width, height, layers, time, elevation  [bbox appended last]
     qs = urllib.parse.urlencode({
         'service':     'WMS',
         'request':     'GetMap',
@@ -353,8 +358,13 @@ def _warmup_single(session: requests.Session, layer: str,
         'time':        time_val,
         'elevation':   elev_val,
     })
-    url = f"{NGINX_WARMUP_URL}/geoserver/gwc/service/wms?{qs}&bbox={bbox_str}"
+    return f"{NGINX_WARMUP_URL}/geoserver/gwc/service/wms?{qs}&bbox={bbox_str}"
 
+
+def _warmup_single(session: requests.Session, layer: str,
+                   time_val: str, elev_val: str, bbox: tuple) -> bool:
+    """Fire one nginx warmup request. Returns True on HTTP 200."""
+    url = _build_tile_url(layer, time_val, elev_val, bbox)
     try:
         r = session.get(url, timeout=30)
         return r.status_code == 200
@@ -407,6 +417,74 @@ def run_nginx_warmup(layer: str, time_vals: list[str],
 
     print(f"\n  ✅ Nginx warmup done: {done - errors}/{done} tiles cached")
     return errors == 0
+
+
+# ─── Cache verification ─────────────────────────────────────────────────────────
+
+CACHE_VERIFY_SAMPLE_SIZE   = 20     # tiles to re-check per layer after warm-up
+CACHE_VERIFY_MIN_HIT_RATIO = 0.90   # warn if fewer than 90% come back as HIT
+
+
+def _verify_single(session: requests.Session, layer: str,
+                   time_val: str, elev_val: str, bbox: tuple) -> str:
+    """Re-request one just-warmed tile and return its X-Cache-Status header."""
+    url = _build_tile_url(layer, time_val, elev_val, bbox)
+    try:
+        r = session.get(url, timeout=30)
+        return r.headers.get('X-Cache-Status', 'MISSING-HEADER')
+    except Exception as exc:
+        return f'ERROR:{type(exc).__name__}'
+
+
+def verify_nginx_warmup(layer: str, time_vals: list[str], elev_vals: list[str],
+                        sample_size: int = CACHE_VERIFY_SAMPLE_SIZE,
+                        dry_run: bool = False) -> bool:
+    """
+    Re-request a random sample of tiles that run_nginx_warmup() just fetched,
+    and check their X-Cache-Status response header.
+
+    Why this exists: the nginx cache key is the exact request URI, and
+    _build_tile_url() reconstructs that URI independently of the browser (via
+    a Node.js replica of Leaflet's tile math). If that replica ever drifts —
+    a Leaflet version bump, a parameter reorder, a float-rounding change —
+    run_nginx_warmup() keeps reporting "200 OK, tiles cached" while every
+    warm-up request is silently writing a cache entry real user traffic never
+    reads. This step catches that immediately (as a mismatched hit ratio)
+    instead of relying on someone noticing slow tiles days later.
+
+    Returns True if the sampled hit ratio meets CACHE_VERIFY_MIN_HIT_RATIO.
+    """
+    bboxes = compute_tile_bboxes()
+    population = [(t, e, b) for t in time_vals for e in elev_vals for b in bboxes]
+    if not population:
+        return True
+
+    sample = random.sample(population, min(sample_size, len(population)))
+
+    if dry_run:
+        print(f"  [DRY-RUN] Would verify {len(sample)} sample tile(s) for {layer}")
+        return True
+
+    session = requests.Session()
+    session.headers.update({'Connection': 'keep-alive'})
+
+    statuses = [_verify_single(session, layer, t, e, b) for t, e, b in sample]
+    counts = Counter(statuses)
+    hits = counts.get('HIT', 0)
+    ratio = hits / len(statuses)
+
+    print(f"  🔍 Cache verify {layer}: {hits}/{len(statuses)} HIT ({ratio:.0%})  "
+          f"breakdown={dict(counts)}")
+
+    if ratio < CACHE_VERIFY_MIN_HIT_RATIO:
+        print(f"  ⚠️  WARNING: {layer} hit ratio {ratio:.0%} is below the "
+              f"{CACHE_VERIFY_MIN_HIT_RATIO:.0%} threshold — warm-up requests may not "
+              f"be matching real browser cache keys (BBOX/param drift), or nginx is "
+              f"evicting tiles faster than expected. Check the Grafana "
+              f"'Nginx GWC Cache Hit Ratio' dashboard.")
+        return False
+
+    return True
 
 
 # ─── Ready-dates JSON ──────────────────────────────────────────────────────────
@@ -564,6 +642,7 @@ def run_seed(dry_run: bool = False, truncate_only: bool = False, days: int = 7):
     # ── Phase 2: Wait for GWC to finish, then warm nginx ──────────────────
     all_seeded_times: list[str] = []
     gwc_failed = False
+    verify_failed = False
 
     for layer, (recent_times, elevations) in seeded_data.items():
         print(f"\n🕐 Phase 2 — {layer}")
@@ -577,6 +656,9 @@ def run_seed(dry_run: bool = False, truncate_only: bool = False, days: int = 7):
         run_nginx_warmup(layer, recent_times, elevations, dry_run=dry_run)
         all_seeded_times.extend(recent_times)
 
+        if not verify_nginx_warmup(layer, recent_times, elevations, dry_run=dry_run):
+            verify_failed = True
+
     # ── Phase 3: Write ready_dates.json ───────────────────────────────────
     print(f"\n📋 Phase 3 — ready_dates.json")
     if all_seeded_times:
@@ -587,8 +669,13 @@ def run_seed(dry_run: bool = False, truncate_only: bool = False, days: int = 7):
     print(f"\n{'='*60}")
     if gwc_failed:
         print("  ⚠️  Finished with GWC timeout(s). Check GeoServer logs.")
+    elif verify_failed:
+        print("  ⚠️  Finished, but cache verification found a low hit ratio for at")
+        print("      least one layer — see the warning(s) above. This does NOT fail")
+        print("      the run (seeding itself succeeded); check the Grafana cache")
+        print("      dashboard and this log if tiles feel slow after this run.")
     else:
-        print("  ✅ GWC seeding + nginx warm-up complete.")
+        print("  ✅ GWC seeding + nginx warm-up complete. Cache verification OK.")
     print(f"{'='*60}\n")
 
 

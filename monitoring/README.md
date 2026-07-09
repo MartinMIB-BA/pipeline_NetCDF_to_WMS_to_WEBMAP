@@ -68,12 +68,10 @@ Scrape targets configured in `prometheus/prometheus.yml`:
 
 ### Grafana (`:3000`)
 
-Dashboard visualization. Pre-provisioned with:
-- System overview (CPU, memory, disk)
-- PostgreSQL performance (query rate, cache hit ratio, active connections)
-- PgBouncer pool utilization
-- Nginx request throughput and error rate
-- Container resource usage
+Datasources (Prometheus, Loki) and dashboards under `grafana/provisioning/` are auto-loaded on startup — see `docker-compose.yml`'s `grafana` volume mount. Currently provisioned:
+- **Nginx GWC Cache Hit Ratio** (`grafana/provisioning/dashboards/json/nginx-cache-hit-ratio.json`) — hit ratio, cache-status breakdown, raw counts. Reads the `cache_status` label that Promtail extracts from the nginx access log (see Promtail section below).
+
+Any other dashboards (system overview, PostgreSQL, PgBouncer, container resources) were created manually in the Grafana UI and live in the `grafana_data` Docker volume, not in this repo.
 
 Default credentials: `admin` / `admin` (change on first login).
 
@@ -85,7 +83,7 @@ Configured for local filesystem storage with a retention policy defined in `loki
 
 ### Promtail
 
-Log shipper. Reads Nginx access logs from the shared volume and pushes them to Loki with labels `job=nginx`, `host=<hostname>`.
+Log shipper. Reads Nginx access logs from the shared volume and pushes them to Loki with label `job=nginx`, plus `cache_status` (HIT/MISS/BYPASS/EXPIRED/STALE/UPDATING/REVALIDATED/`-`) extracted from the `cache=$upstream_cache_status` field that `nginx/nginx.conf`'s `gs` log format appends. `-` means the location had no `proxy_cache` configured at all (e.g. plain `/geoserver/wms`, static assets) — not a cache miss, just not cacheable today.
 
 Log path: `/var/log/nginx/access.log` (mapped from the main stack's `nginx_logs` volume).
 
@@ -153,8 +151,8 @@ cd ../monitoring && docker-compose up -d
 
 ## Adding Custom Dashboards
 
-1. Place JSON dashboard files in `grafana/dashboards/`
-2. Grafana auto-loads them on startup (provisioning is configured)
+1. Place JSON dashboard files in `grafana/provisioning/dashboards/json/`
+2. Grafana auto-loads them on startup into the "Cache" folder (provider config: `grafana/provisioning/dashboards/dashboards.yml`) — polls for changes every 30s
 3. Or import manually via Grafana UI → Dashboards → Import
 
 ---
