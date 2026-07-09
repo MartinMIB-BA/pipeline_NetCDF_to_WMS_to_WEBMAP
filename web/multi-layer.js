@@ -1331,31 +1331,57 @@ function syncChoroplethToGlobalDate() {
         if (!layerData.metadata || layerData.metadata.type !== 'choropleth' || !layerData.metadata.hasTime) return;
 
         const weeks = (window._choroplethWeeks && window._choroplethWeeks[layerId]) || [];
-        if (weeks.length === 0) return;
+        const weekLabel = document.getElementById(`week-label-${layerId}`);
+
+        if (weeks.length === 0) {
+            if (weekLabel) weekLabel.textContent = 'No data available — Country Hazard';
+            return;
+        }
+
+        // Check if selected date is before the earliest available forecast week
+        const earliestWeek = new Date(weeks[0]);
+        if (selectedDate < earliestWeek) {
+            // No data for this date
+            if (weekLabel) {
+                weekLabel.textContent = 'No data available — Country Hazard';
+                weekLabel.style.color = 'var(--warning-color)';
+            }
+            // Hide tiles (send impossible time so GeoServer returns empty)
+            if (layerData.wmsLayer && window.map && window.map.hasLayer(layerData.wmsLayer)) {
+                window.map.removeLayer(layerData.wmsLayer);
+            }
+            layerData.time = null;
+            return;
+        }
 
         // Find the forecast week that contains the selected date
         // (largest forecast_date that is <= selected date)
-        let matchedWeek = weeks[0]; // fallback to earliest
+        let matchedWeek = weeks[0];
         for (const w of weeks) {
             const wDate = new Date(w);
             if (wDate <= selectedDate) {
                 matchedWeek = w;
             } else {
-                break; // weeks are sorted ascending
+                break;
             }
+        }
+
+        // Restore layer if it was hidden
+        if (layerData.wmsLayer && window.map && !window.map.hasLayer(layerData.wmsLayer) && !layerData.hidden) {
+            layerData.wmsLayer.addTo(window.map);
         }
 
         // Update tiles
         refreshLayerTiles(layerId, layerData, { time: matchedWeek });
 
         // Update week label (show range: forecast_date to forecast_date + 6 days)
-        const weekLabel = document.getElementById(`week-label-${layerId}`);
         if (weekLabel) {
             const start = new Date(matchedWeek);
             const end = new Date(start);
             end.setUTCDate(end.getUTCDate() + 6);
             const fmt = (d) => `${String(d.getUTCDate()).padStart(2,'0')}.${String(d.getUTCMonth()+1).padStart(2,'0')}`;
             weekLabel.textContent = `${fmt(start)} – ${fmt(end)}.${end.getUTCFullYear()}`;
+            weekLabel.style.color = 'var(--primary-color)';
         }
     });
 }
