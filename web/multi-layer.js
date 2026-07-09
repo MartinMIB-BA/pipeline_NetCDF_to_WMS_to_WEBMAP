@@ -1743,6 +1743,8 @@ document.addEventListener('DOMContentLoaded', function () {
         // 50ms is enough to collapse same-tick duplicates without blocking rapid arrow navigation
         const debouncedTimeRefresh = debounce((newTime, rawValue) => {
             activeLayers.forEach((layerData, layerId) => {
+                // Choropleth layers are synced separately via syncChoroplethToGlobalDate
+                if (layerData.metadata && layerData.metadata.type === 'choropleth') return;
                 refreshLayerTiles(layerId, layerData, { time: newTime });
                 const individualInput = document.getElementById(`time-${layerId}`);
                 if (individualInput) individualInput.value = rawValue;
@@ -1758,6 +1760,9 @@ document.addEventListener('DOMContentLoaded', function () {
 
             // Immediate state updates (no debounce — needed for cache clear and UI labels)
             activeLayers.forEach((layerData, layerId) => {
+                // Choropleth layers manage their own time via syncChoroplethToGlobalDate
+                if (layerData.metadata && layerData.metadata.type === 'choropleth') return;
+
                 layerData.time = newTime;
 
                 if (window.isAnimating && window.currentParams && window.currentParams.layer === layerId) {
