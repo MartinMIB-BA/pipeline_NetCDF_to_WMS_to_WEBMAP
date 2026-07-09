@@ -478,20 +478,12 @@ function generateLayerControls(layerId) {
         `;
     }
 
-    // Week navigator for choropleth layers with TIME
+    // Forecast week label for choropleth layers with TIME (follows global date)
     if (metadata.type === 'choropleth' && metadata.hasTime) {
         html += `
             <div class="layer-control">
                 <label class="layer-control-label"><i class="fa-solid fa-calendar-week"></i> Forecast Week</label>
-                <div class="layer-control-row" style="justify-content: space-between;">
-                    <button type="button" class="time-stepper-btn" id="week-prev-${layerId}" title="Previous week">
-                        <i class="fa-solid fa-chevron-left"></i>
-                    </button>
-                    <span class="layer-control-value" id="week-label-${layerId}" style="flex:1; text-align:center; font-size:11px;">--.--.----</span>
-                    <button type="button" class="time-stepper-btn" id="week-next-${layerId}" title="Next week">
-                        <i class="fa-solid fa-chevron-right"></i>
-                    </button>
-                </div>
+                <div id="week-label-${layerId}" style="font-size: 11px; font-weight: 600; color: var(--primary-color); background: var(--bg-dark); border: 1px solid var(--border-color); border-radius: 6px; padding: 5px 8px; text-align: center;">--.--.---- – --.--. ----</div>
             </div>
         `;
     }
@@ -1324,6 +1316,51 @@ function setLayerVisibility(layerId, visible) {
 
 const initializedControls = new Set();
 
+/**
+ * Sync all choropleth layers to the correct forecast week for the current global date.
+ * Finds the forecast_date that covers the selected date (closest <= selected date).
+ * Updates tiles + week label.
+ */
+function syncChoroplethToGlobalDate() {
+    const timeSelect = document.getElementById('time-select');
+    if (!timeSelect || !timeSelect.value) return;
+
+    const selectedDate = new Date(timeSelect.value + ':00.000Z');
+
+    activeLayers.forEach((layerData, layerId) => {
+        if (!layerData.metadata || layerData.metadata.type !== 'choropleth' || !layerData.metadata.hasTime) return;
+
+        const weeks = (window._choroplethWeeks && window._choroplethWeeks[layerId]) || [];
+        if (weeks.length === 0) return;
+
+        // Find the forecast week that contains the selected date
+        // (largest forecast_date that is <= selected date)
+        let matchedWeek = weeks[0]; // fallback to earliest
+        for (const w of weeks) {
+            const wDate = new Date(w);
+            if (wDate <= selectedDate) {
+                matchedWeek = w;
+            } else {
+                break; // weeks are sorted ascending
+            }
+        }
+
+        // Update tiles
+        refreshLayerTiles(layerId, layerData, { time: matchedWeek });
+
+        // Update week label (show range: forecast_date to forecast_date + 6 days)
+        const weekLabel = document.getElementById(`week-label-${layerId}`);
+        if (weekLabel) {
+            const start = new Date(matchedWeek);
+            const end = new Date(start);
+            end.setUTCDate(end.getUTCDate() + 6);
+            const fmt = (d) => `${String(d.getUTCDate()).padStart(2,'0')}.${String(d.getUTCMonth()+1).padStart(2,'0')}`;
+            weekLabel.textContent = `${fmt(start)} – ${fmt(end)}.${end.getUTCFullYear()}`;
+        }
+    });
+}
+window.syncChoroplethToGlobalDate = syncChoroplethToGlobalDate;
+
 // Attach control listeners for a specific layer
 function attachLayerControlListeners(layerId) {
     if (initializedControls.has(layerId)) return;
@@ -1439,26 +1476,23 @@ function attachLayerControlListeners(layerId) {
         });
     }
 
-    // Week navigator for choropleth layers with TIME
-    const weekPrev = document.getElementById(`week-prev-${layerId}`);
-    const weekNext = document.getElementById(`week-next-${layerId}`);
+    // Choropleth week sync: fetch available weeks, find correct one for global date
     const weekLabel = document.getElementById(`week-label-${layerId}`);
-    if (weekPrev && weekNext && weekLabel) {
-        // Initialize: fetch actual available dates from GeoServer
+    if (weekLabel && layerMetadata[layerId] && layerMetadata[layerId].type === 'choropleth' && layerMetadata[layerId].hasTime) {
+        // Fetch available forecast dates from GetCapabilities
         const fetchAvailableWeeks = async () => {
             try {
                 const resp = await fetch(`${GEOSERVER_URL}/wms?service=WMS&version=1.3.0&request=GetCapabilities`);
                 const text = await resp.text();
                 const parser = new DOMParser();
                 const xml = parser.parseFromString(text, 'text/xml');
-                // Find our layer's time dimension
                 const layers = xml.querySelectorAll('Layer > Layer');
                 for (const layer of layers) {
                     const name = layer.querySelector('Name');
                     if (name && name.textContent === `E_and_T:${layerId}`) {
                         const dim = layer.querySelector('Dimension[name="time"]');
                         if (dim) {
-                            return dim.textContent.trim().split(',').map(d => d.trim());
+                            return dim.textContent.trim().split(',').map(d => d.trim()).sort();
                         }
                     }
                 }
@@ -1466,61 +1500,17 @@ function attachLayerControlListeners(layerId) {
             return [];
         };
 
-        let availableWeeks = [];
-        let currentWeekIdx = -1;
+        // Store available weeks globally for this layer
+        if (!window._choroplethWeeks) window._choroplethWeeks = {};
 
         fetchAvailableWeeks().then(weeks => {
-            availableWeeks = weeks.sort();
-            if (availableWeeks.length > 0) {
-                currentWeekIdx = availableWeeks.length - 1; // latest
-                const latestTime = availableWeeks[currentWeekIdx];
-                // Set layer time to latest
-                const layerData = activeLayers.get(layerId);
-                if (layerData) {
-                    refreshLayerTiles(layerId, layerData, { time: latestTime });
-                }
-                updateWeekLabel();
-            }
+            window._choroplethWeeks[layerId] = weeks;
+            // Trigger initial sync with current global date
+            syncChoroplethToGlobalDate();
         });
-
-        const updateWeekLabel = () => {
-            if (currentWeekIdx < 0 || !availableWeeks[currentWeekIdx]) {
-                weekLabel.textContent = 'Latest';
-                return;
-            }
-            const d = new Date(availableWeeks[currentWeekIdx]);
-            const dd = String(d.getUTCDate()).padStart(2, '0');
-            const mm = String(d.getUTCMonth() + 1).padStart(2, '0');
-            const yyyy = d.getUTCFullYear();
-            weekLabel.textContent = `${dd}.${mm}.${yyyy}`;
-        };
-
-        const stepWeek = (direction) => {
-            const newIdx = currentWeekIdx + direction;
-            if (newIdx < 0 || newIdx >= availableWeeks.length) return; // can't go beyond
-            currentWeekIdx = newIdx;
-            const newTime = availableWeeks[currentWeekIdx];
-
-            const layerData = activeLayers.get(layerId);
-            if (layerData) refreshLayerTiles(layerId, layerData, { time: newTime });
-
-            // Sync sibling choropleth layers
-            activeLayers.forEach((ld, lid) => {
-                if (lid !== layerId && ld.metadata && ld.metadata.type === 'choropleth' && ld.metadata.hasTime) {
-                    refreshLayerTiles(lid, ld, { time: newTime });
-                    const sibLabel = document.getElementById(`week-label-${lid}`);
-                    if (sibLabel) {
-                        const sd = new Date(newTime);
-                        sibLabel.textContent = `${String(sd.getUTCDate()).padStart(2,'0')}.${String(sd.getUTCMonth()+1).padStart(2,'0')}.${sd.getUTCFullYear()}`;
-                    }
-                }
-            });
-            updateWeekLabel();
-        };
-
-        weekPrev.addEventListener('click', () => stepWeek(-1));
-        weekNext.addEventListener('click', () => stepWeek(1));
     }
+
+    // Opacity control (ONLY for non-video layers)
 
     // Opacity control (ONLY for non-video layers)
     const opacityInput = document.getElementById(`opacity-${layerId}`);
@@ -1788,6 +1778,9 @@ document.addEventListener('DOMContentLoaded', function () {
 
             // Debounced: tile refresh and input sync (prevents double-fire with app.js updateWMSParams)
             debouncedTimeRefresh(newTime, rawValue);
+
+            // Sync choropleth layers to the correct forecast week
+            syncChoroplethToGlobalDate();
         });
     }
 
