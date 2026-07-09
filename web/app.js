@@ -2042,6 +2042,13 @@ let isUserChangingDate = false;
 function getCurrentLayerIdForGlobalTime() {
     if (window.currentParams && window.currentParams.layer) return window.currentParams.layer;
     if (window.activeLayers && window.activeLayers.size > 0) {
+        // Skip choropleth layers — they have limited time range (weekly only)
+        // and should not control the global date picker bounds
+        for (const [layerId, layerData] of window.activeLayers.entries()) {
+            if (layerData.metadata && layerData.metadata.type === 'choropleth') continue;
+            return layerId;
+        }
+        // Fallback: return first layer even if choropleth
         const first = window.activeLayers.keys().next();
         if (!first.done) return first.value;
     }
