@@ -15,3 +15,16 @@ scrape_configs:
         labels:
           job: nginx
           __path__: /var/log/nginx/access.log
+    pipeline_stages:
+      # Parses the 'gs' log_format from nginx/nginx.conf:
+      # $time_iso8601 $remote_addr "$request" status=$status rt=$request_time urt=$upstream_response_time cache=$upstream_cache_status
+      - regex:
+          expression: '^(?P<time>\S+) (?P<remote_addr>\S+) "(?P<request>[^"]*)" status=(?P<status>\d+) rt=(?P<rt>\S+) urt=(?P<urt>\S+) cache=(?P<cache_status>\S+)$'
+      # Promote cache_status to a Loki stream label so Grafana can query
+      # {job="nginx", cache_status="HIT"} directly (cardinality is bounded:
+      # HIT/MISS/BYPASS/EXPIRED/STALE/UPDATING/REVALIDATED/"-").
+      - labels:
+          cache_status:
+      - timestamp:
+          source: time
+          format: RFC3339

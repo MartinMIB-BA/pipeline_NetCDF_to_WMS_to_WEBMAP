@@ -17,6 +17,7 @@ services:
     container_name: mon_grafana
     volumes:
       - grafana_data:/var/lib/grafana
+      - /opt/geoserver/monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
     ports:
       - "3000:3000"
     restart: unless-stopped
