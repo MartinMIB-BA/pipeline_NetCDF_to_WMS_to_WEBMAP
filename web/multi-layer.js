@@ -1894,11 +1894,16 @@ document.addEventListener('DOMContentLoaded', function () {
             // e.g., video layers have 12:00Z times but static layers only have 00:00Z times.
             if (window.wmsMetadata && window.wmsMetadata.loaded) {
                 // Try layer-specific time first, fall back to global max
-                const latestISO = window.wmsMetadata.getLatestTimeForLayer(defaultLayerId)
+                let latestISO = window.wmsMetadata.getLatestTimeForLayer(defaultLayerId)
                     || window.wmsMetadata.getTimeExtent().maxDate?.toISOString();
 
+                // Shared permalink date takes priority
+                if (window._sharedState && window._sharedState.t) {
+                    latestISO = window._sharedState.t + ':00.000Z';
+                }
+
                 if (latestISO) {
-                    console.log(`✅ Metadata loaded. Layer-specific latest time: ${latestISO}`);
+                    console.log(`✅ Metadata loaded. Initial time: ${latestISO}`);
 
                     // Update the global time input so addLayer() picks up the right value
                     const timeInput = document.getElementById('time-select');
@@ -1910,25 +1915,38 @@ document.addEventListener('DOMContentLoaded', function () {
                 }
             }
 
-            // Auto-initialize default layers (bottom to top order):
-            // 1. Country Risk choropleth (base context layer)
-            const choroplethCheckbox = document.getElementById('checkbox-country_twl_summary');
-            if (choroplethCheckbox && !choroplethCheckbox.checked) {
-                console.log('🚀 Auto-initializing default layer: country_twl_summary');
-                choroplethCheckbox.click();
-            }
+            // Auto-initialize layers: shared permalink layers take priority over defaults
+            const sharedLayers = (window._sharedState && window._sharedState.layers)
+                ? window._sharedState.layers.split(',').filter(Boolean)
+                : null;
 
-            // 2. GloFAS reporting points
-            const reportingPointsCheckbox = document.getElementById('checkbox-reportingPoints');
-            if (reportingPointsCheckbox && !reportingPointsCheckbox.checked) {
-                console.log('🚀 Auto-initializing default layer: reportingPoints');
-                reportingPointsCheckbox.click();
-            }
+            if (sharedLayers) {
+                console.log('🔗 Loading shared layers from link:', sharedLayers);
+                sharedLayers.forEach(layerId => {
+                    const cb = document.getElementById(`checkbox-${layerId}`);
+                    if (cb && !cb.checked) cb.click();
+                });
+            } else {
+                // Default layers (bottom to top order):
+                // 1. Country Risk choropleth (base context layer)
+                const choroplethCheckbox = document.getElementById('checkbox-country_twl_summary');
+                if (choroplethCheckbox && !choroplethCheckbox.checked) {
+                    console.log('🚀 Auto-initializing default layer: country_twl_summary');
+                    choroplethCheckbox.click();
+                }
 
-            // 3. TWL75 forecast (on top)
-            if (defaultCheckbox && !defaultCheckbox.checked) {
-                console.log(`🚀 Auto-initializing default layer: ${defaultLayerId}`);
-                defaultCheckbox.click();
+                // 2. GloFAS reporting points
+                const reportingPointsCheckbox = document.getElementById('checkbox-reportingPoints');
+                if (reportingPointsCheckbox && !reportingPointsCheckbox.checked) {
+                    console.log('🚀 Auto-initializing default layer: reportingPoints');
+                    reportingPointsCheckbox.click();
+                }
+
+                // 3. TWL75 forecast (on top)
+                if (defaultCheckbox && !defaultCheckbox.checked) {
+                    console.log(`🚀 Auto-initializing default layer: ${defaultLayerId}`);
+                    defaultCheckbox.click();
+                }
             }
         }).catch(err => {
             // Fallback: init anyway even if metadata fails

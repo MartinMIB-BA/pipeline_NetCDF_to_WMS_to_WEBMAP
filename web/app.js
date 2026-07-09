@@ -2845,7 +2845,12 @@ function applyDateRangeFromMetadata() {
     }
 
     // 2. Set currentParams.time to latest available date
-    const latestTime = maxDate.toISOString();
+    //    (or the shared date from a permalink, if present)
+    let latestTime = maxDate.toISOString();
+    if (window._sharedState && window._sharedState.t) {
+        latestTime = window._sharedState.t + ':00.000Z';
+        console.log(`🔗 Using shared date from link: ${latestTime}`);
+    }
     if (window.currentParams) {
         window.currentParams.time = latestTime;
     }
