@@ -248,6 +248,10 @@
             return `<span style="color:#fff; font-weight:700;">${Number(val).toFixed(1)} %</span>`;
         };
 
+        // Check which hazard layers are active
+        const showTwl = typeof activeLayers !== 'undefined' && activeLayers.has('country_twl_summary');
+        const showEpis = typeof activeLayers !== 'undefined' && activeLayers.has('country_epis_summary');
+
         const hasTwl = props.twl_rp10 !== null && props.twl_rp10 !== undefined;
         const hasEpis = props.epis_rp10 !== null && props.epis_rp10 !== undefined;
         const isCoastal = hasTwl || hasEpis;
@@ -261,7 +265,7 @@
                         <i class="fa-solid fa-mountain"></i> No coastal forecast data
                      </div>`;
         } else {
-            if (hasTwl) {
+            if (showTwl && hasTwl) {
                 html += `<div class="cip-section-title" style="color:var(--accent);">
                             <i class="fa-solid fa-water"></i> Total Water Level (TWL)
                          </div>`;
@@ -269,7 +273,7 @@
                 html += `<div class="cip-row"><span>RP 100yr</span>${fmt(props.twl_rp100)}</div>`;
                 html += `<div class="cip-row"><span>RP 500yr</span>${fmt(props.twl_rp500)}</div>`;
             }
-            if (hasEpis) {
+            if (showEpis && hasEpis) {
                 html += `<div class="cip-section-title" style="color:#f472b6;">
                             <i class="fa-solid fa-bolt"></i> Episodic Water Level (Epis)
                          </div>`;
@@ -277,9 +281,9 @@
                 html += `<div class="cip-row"><span>RP 100yr</span>${fmt(props.epis_rp100)}</div>`;
                 html += `<div class="cip-row"><span>RP 500yr</span>${fmt(props.epis_rp500)}</div>`;
             }
-            if (props.n_grid_points_inside_buffer) {
+            if (props.n_grid_points) {
                 html += `<div class="cip-footer">
-                            <i class="fa-solid fa-border-all"></i> ${props.n_grid_points_inside_buffer} grid points in buffer
+                            <i class="fa-solid fa-border-all"></i> ${props.n_grid_points} grid points in buffer
                          </div>`;
             }
         }
