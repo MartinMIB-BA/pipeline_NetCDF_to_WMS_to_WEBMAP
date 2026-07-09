@@ -759,17 +759,10 @@ function addLayer(layerId) {
         initialTime = null;
     }
 
-    // Choropleth layers WITH time: use latest available Monday (weekly forecast)
+    // Choropleth layers WITH time: let GeoServer use default (latest week)
+    // Don't send TIME on initial load — GeoServer's "Use biggest domain value" handles it
     if (metadata && metadata.type === 'choropleth' && metadata.hasTime) {
-        // Find the most recent Monday (forecast_date in DB)
-        const today = new Date();
-        const dayOfWeek = today.getUTCDay(); // 0=Sun, 1=Mon, ...
-        const daysToLastMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
-        const lastMonday = new Date(today);
-        lastMonday.setUTCDate(today.getUTCDate() - daysToLastMonday);
-        lastMonday.setUTCHours(0, 0, 0, 0);
-        initialTime = lastMonday.toISOString();
-        console.log(`🗓️ Choropleth initial TIME (latest Monday): ${initialTime}`);
+        initialTime = null;
     }
 
     let initialElevation = 0;
@@ -932,7 +925,9 @@ function addLayer(layerId) {
     });
 
     // All tiles finished — if every tile failed, mark this layer as no-data
+    // (Choropleth layers are excluded — they always have data from PostGIS join)
     wmsLayer.on('load', function () {
+        if (metadata && metadata.type === 'choropleth') return; // skip no-data tracking
         if (tileSuccessCount === 0 && tileErrorCount > 0) {
             _layersWithNoData.add(layerId);
         } else {
@@ -1449,26 +1444,67 @@ function attachLayerControlListeners(layerId) {
     const weekNext = document.getElementById(`week-next-${layerId}`);
     const weekLabel = document.getElementById(`week-label-${layerId}`);
     if (weekPrev && weekNext && weekLabel) {
-        // Initialize label with current time
+        // Initialize: fetch actual available dates from GeoServer
+        const fetchAvailableWeeks = async () => {
+            try {
+                const resp = await fetch(`${GEOSERVER_URL}/wms?service=WMS&version=1.3.0&request=GetCapabilities`);
+                const text = await resp.text();
+                const parser = new DOMParser();
+                const xml = parser.parseFromString(text, 'text/xml');
+                // Find our layer's time dimension
+                const layers = xml.querySelectorAll('Layer > Layer');
+                for (const layer of layers) {
+                    const name = layer.querySelector('Name');
+                    if (name && name.textContent === `E_and_T:${layerId}`) {
+                        const dim = layer.querySelector('Dimension[name="time"]');
+                        if (dim) {
+                            return dim.textContent.trim().split(',').map(d => d.trim());
+                        }
+                    }
+                }
+            } catch (e) { console.warn('Could not fetch time dimension:', e); }
+            return [];
+        };
+
+        let availableWeeks = [];
+        let currentWeekIdx = -1;
+
+        fetchAvailableWeeks().then(weeks => {
+            availableWeeks = weeks.sort();
+            if (availableWeeks.length > 0) {
+                currentWeekIdx = availableWeeks.length - 1; // latest
+                const latestTime = availableWeeks[currentWeekIdx];
+                // Set layer time to latest
+                const layerData = activeLayers.get(layerId);
+                if (layerData) {
+                    refreshLayerTiles(layerId, layerData, { time: latestTime });
+                }
+                updateWeekLabel();
+            }
+        });
+
         const updateWeekLabel = () => {
-            const layerData = activeLayers.get(layerId);
-            if (!layerData || !layerData.time) { weekLabel.textContent = '--'; return; }
-            const d = new Date(layerData.time);
+            if (currentWeekIdx < 0 || !availableWeeks[currentWeekIdx]) {
+                weekLabel.textContent = 'Latest';
+                return;
+            }
+            const d = new Date(availableWeeks[currentWeekIdx]);
             const dd = String(d.getUTCDate()).padStart(2, '0');
             const mm = String(d.getUTCMonth() + 1).padStart(2, '0');
             const yyyy = d.getUTCFullYear();
             weekLabel.textContent = `${dd}.${mm}.${yyyy}`;
         };
-        updateWeekLabel();
 
         const stepWeek = (direction) => {
+            const newIdx = currentWeekIdx + direction;
+            if (newIdx < 0 || newIdx >= availableWeeks.length) return; // can't go beyond
+            currentWeekIdx = newIdx;
+            const newTime = availableWeeks[currentWeekIdx];
+
             const layerData = activeLayers.get(layerId);
-            if (!layerData || !layerData.time) return;
-            const current = new Date(layerData.time);
-            current.setUTCDate(current.getUTCDate() + (direction * 7));
-            const newTime = current.toISOString();
-            refreshLayerTiles(layerId, layerData, { time: newTime });
-            // Also update any sibling choropleth layers to same week
+            if (layerData) refreshLayerTiles(layerId, layerData, { time: newTime });
+
+            // Sync sibling choropleth layers
             activeLayers.forEach((ld, lid) => {
                 if (lid !== layerId && ld.metadata && ld.metadata.type === 'choropleth' && ld.metadata.hasTime) {
                     refreshLayerTiles(lid, ld, { time: newTime });
@@ -1665,6 +1701,11 @@ function checkAllLayersAvailability() {
 
     const checks = [];
     for (const [layerId, layerData] of activeLayers.entries()) {
+        // Skip choropleth layers — they always have data (PostGIS join, not raster)
+        if (layerData.metadata && layerData.metadata.type === 'choropleth') {
+            checks.push(true);
+            continue;
+        }
         const result = checkLayerDataAvailability(layerId, layerData.time, layerData.elevation);
         checks.push(result);
     }
