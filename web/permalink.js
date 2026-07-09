@@ -165,26 +165,26 @@
             // Force fresh hash
             const hash = stateToHash(encodeState());
             const url = window.location.origin + window.location.pathname + '#' + hash;
-            navigator.clipboard.writeText(url).then(() => {
-                btn.innerHTML = '<i class="fa-solid fa-check"></i>';
-                btn.style.borderColor = 'rgba(52, 211, 153, 0.5)';
-                btn.style.color = '#34d399';
-                setTimeout(() => {
-                    btn.innerHTML = '<i class="fa-solid fa-link"></i>';
-                    btn.style.borderColor = '';
-                    btn.style.color = '';
-                }, 2000);
-            }).catch(() => {
-                // Fallback for older browsers
-                const input = document.createElement('input');
-                input.value = url;
-                document.body.appendChild(input);
-                input.select();
-                document.execCommand('copy');
-                document.body.removeChild(input);
-                btn.innerHTML = '<i class="fa-solid fa-check"></i>';
-                setTimeout(() => { btn.innerHTML = '<i class="fa-solid fa-link"></i>'; }, 2000);
-            });
+
+            // Copy to clipboard (works on HTTP via textarea fallback)
+            const textarea = document.createElement('textarea');
+            textarea.value = url;
+            textarea.style.position = 'fixed';
+            textarea.style.opacity = '0';
+            document.body.appendChild(textarea);
+            textarea.select();
+            document.execCommand('copy');
+            document.body.removeChild(textarea);
+
+            // Visual feedback
+            btn.innerHTML = '<i class="fa-solid fa-check"></i>';
+            btn.style.borderColor = 'rgba(52, 211, 153, 0.5)';
+            btn.style.color = '#34d399';
+            setTimeout(() => {
+                btn.innerHTML = '<i class="fa-solid fa-link"></i>';
+                btn.style.borderColor = '';
+                btn.style.color = '';
+            }, 2000);
         });
         document.body.appendChild(btn);
     }
