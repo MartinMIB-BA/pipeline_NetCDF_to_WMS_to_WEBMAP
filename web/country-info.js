@@ -220,6 +220,16 @@
             J: 5
         });
 
+        // Add TIME from active choropleth layer (so popup shows correct week)
+        if (typeof activeLayers !== 'undefined') {
+            for (const [lid, ld] of activeLayers.entries()) {
+                if (ld.metadata && ld.metadata.type === 'choropleth' && ld.metadata.hasTime && ld.time) {
+                    params.set('TIME', ld.time);
+                    break;
+                }
+            }
+        }
+
         const url = `${GEOSERVER_URL}/wms?${params.toString()}`;
         const resp = await fetch(url);
         if (!resp.ok) return null;
