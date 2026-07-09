@@ -84,14 +84,37 @@
             if (basemapSelect) basemapSelect.value = state.base;
         }
 
-        // Restore date/time (before layers, so layers pick up the right time)
+        // Restore layers (only if different from current)
+        if (state.layers && typeof activeLayers !== 'undefined') {
+            const wantedLayers = state.layers.split(',').filter(Boolean);
+            const currentLayers = Array.from(activeLayers.keys());
+            const same = wantedLayers.length === currentLayers.length &&
+                         wantedLayers.every((l, i) => currentLayers.includes(l));
+            if (!same) {
+                currentLayers.forEach(layerId => {
+                    if (!wantedLayers.includes(layerId) && typeof removeLayer === 'function') {
+                        removeLayer(layerId);
+                    }
+                });
+                wantedLayers.forEach(layerId => {
+                    if (!activeLayers.has(layerId) && typeof addLayer === 'function' && layerMetadata[layerId]) {
+                        addLayer(layerId);
+                    }
+                });
+                if (typeof updateLayerCount === 'function') updateLayerCount();
+                if (typeof syncLayerBubbleState === 'function') syncLayerBubbleState();
+            }
+            restored = true;
+        }
+
+        // Restore date/time LAST (after layers are added, so nothing overrides it)
         if (state.t) {
             const timeSelect = document.getElementById('time-select');
             const dateInput = document.getElementById('date-select');
             const hourInput = document.getElementById('hour-select');
             if (timeSelect) {
                 timeSelect.value = state.t;
-                timeSelect.dispatchEvent(new Event('change'));
+                // Don't dispatch change here — we'll force update WMS params directly
             }
             if (dateInput && state.t.length >= 10) {
                 dateInput.value = state.t.slice(0, 10);
@@ -99,29 +122,20 @@
             if (hourInput && state.t.length >= 16) {
                 hourInput.value = state.t.slice(11, 13) >= '12' ? '12' : '00';
             }
-        }
-
-        // Restore layers (remove defaults first, then add specified)
-        if (state.layers && typeof activeLayers !== 'undefined') {
-            const wantedLayers = state.layers.split(',').filter(Boolean);
-
-            // Remove all currently active layers
-            const currentLayers = Array.from(activeLayers.keys());
-            currentLayers.forEach(layerId => {
-                if (typeof removeLayer === 'function') removeLayer(layerId);
+            // Force all active layers to use this time
+            const newTime = state.t + ':00.000Z';
+            if (window.currentParams) window.currentParams.time = newTime;
+            activeLayers.forEach((layerData, layerId) => {
+                if (layerData.metadata && layerData.metadata.type === 'choropleth') return;
+                if (layerData.wmsLayer) {
+                    layerData.time = newTime;
+                    layerData.wmsLayer.setParams({ time: newTime }, false);
+                }
             });
-
-            // Add wanted layers
-            setTimeout(() => {
-                wantedLayers.forEach(layerId => {
-                    if (typeof addLayer === 'function' && typeof layerMetadata !== 'undefined' && layerMetadata[layerId]) {
-                        addLayer(layerId);
-                    }
-                });
-                if (typeof updateLayerCount === 'function') updateLayerCount();
-                if (typeof syncLayerBubbleState === 'function') syncLayerBubbleState();
-            }, 200);
-
+            // Sync choropleth to the restored date
+            if (typeof syncChoroplethToGlobalDate === 'function') {
+                syncChoroplethToGlobalDate();
+            }
             restored = true;
         }
 
