@@ -439,7 +439,7 @@ function generateLayerControls(layerId) {
     let html = '';
 
     // Time control (ONLY for non-static layers like video and points)
-    if (metadata.type !== 'static' && metadata.type !== 'glofas') {
+    if (metadata.type !== 'static' && metadata.type !== 'glofas' && metadata.type !== 'choropleth') {
         // For forecast-style layers (video + coastal points), show dynamic forecast date label
         if (hasForecastDateLabel(metadata)) {
             html += `
@@ -473,6 +473,24 @@ function generateLayerControls(layerId) {
                 <div class="layer-control-row">
                     <input type="range" id="elevation-${layerId}" min="0" max="${maxValue}" value="0" step="1" class="layer-elevation-input">
                     <span class="layer-control-value" id="elevation-value-${layerId}">0</span>
+                </div>
+            </div>
+        `;
+    }
+
+    // Week navigator for choropleth layers with TIME
+    if (metadata.type === 'choropleth' && metadata.hasTime) {
+        html += `
+            <div class="layer-control">
+                <label class="layer-control-label"><i class="fa-solid fa-calendar-week"></i> Forecast Week</label>
+                <div class="layer-control-row" style="justify-content: space-between;">
+                    <button type="button" class="time-stepper-btn" id="week-prev-${layerId}" title="Previous week">
+                        <i class="fa-solid fa-chevron-left"></i>
+                    </button>
+                    <span class="layer-control-value" id="week-label-${layerId}" style="flex:1; text-align:center; font-size:11px;">--.--.----</span>
+                    <button type="button" class="time-stepper-btn" id="week-next-${layerId}" title="Next week">
+                        <i class="fa-solid fa-chevron-right"></i>
+                    </button>
                 </div>
             </div>
         `;
@@ -736,9 +754,22 @@ function addLayer(layerId) {
             : null;
     }
 
-    // Choropleth layers (vector SQL Views) have NO time dimension
-    if (metadata && metadata.type === 'choropleth') {
+    // Choropleth layers (vector SQL Views) have NO time dimension UNLESS hasTime is set
+    if (metadata && metadata.type === 'choropleth' && !metadata.hasTime) {
         initialTime = null;
+    }
+
+    // Choropleth layers WITH time: use latest available Monday (weekly forecast)
+    if (metadata && metadata.type === 'choropleth' && metadata.hasTime) {
+        // Find the most recent Monday (forecast_date in DB)
+        const today = new Date();
+        const dayOfWeek = today.getUTCDay(); // 0=Sun, 1=Mon, ...
+        const daysToLastMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
+        const lastMonday = new Date(today);
+        lastMonday.setUTCDate(today.getUTCDate() - daysToLastMonday);
+        lastMonday.setUTCHours(0, 0, 0, 0);
+        initialTime = lastMonday.toISOString();
+        console.log(`🗓️ Choropleth initial TIME (latest Monday): ${initialTime}`);
     }
 
     let initialElevation = 0;
@@ -1411,6 +1442,48 @@ function attachLayerControlListeners(layerId) {
             // 2. Debounce WMS Request
             debouncedIndividualElevationUpdate(layerId, newVal);
         });
+    }
+
+    // Week navigator for choropleth layers with TIME
+    const weekPrev = document.getElementById(`week-prev-${layerId}`);
+    const weekNext = document.getElementById(`week-next-${layerId}`);
+    const weekLabel = document.getElementById(`week-label-${layerId}`);
+    if (weekPrev && weekNext && weekLabel) {
+        // Initialize label with current time
+        const updateWeekLabel = () => {
+            const layerData = activeLayers.get(layerId);
+            if (!layerData || !layerData.time) { weekLabel.textContent = '--'; return; }
+            const d = new Date(layerData.time);
+            const dd = String(d.getUTCDate()).padStart(2, '0');
+            const mm = String(d.getUTCMonth() + 1).padStart(2, '0');
+            const yyyy = d.getUTCFullYear();
+            weekLabel.textContent = `${dd}.${mm}.${yyyy}`;
+        };
+        updateWeekLabel();
+
+        const stepWeek = (direction) => {
+            const layerData = activeLayers.get(layerId);
+            if (!layerData || !layerData.time) return;
+            const current = new Date(layerData.time);
+            current.setUTCDate(current.getUTCDate() + (direction * 7));
+            const newTime = current.toISOString();
+            refreshLayerTiles(layerId, layerData, { time: newTime });
+            // Also update any sibling choropleth layers to same week
+            activeLayers.forEach((ld, lid) => {
+                if (lid !== layerId && ld.metadata && ld.metadata.type === 'choropleth' && ld.metadata.hasTime) {
+                    refreshLayerTiles(lid, ld, { time: newTime });
+                    const sibLabel = document.getElementById(`week-label-${lid}`);
+                    if (sibLabel) {
+                        const sd = new Date(newTime);
+                        sibLabel.textContent = `${String(sd.getUTCDate()).padStart(2,'0')}.${String(sd.getUTCMonth()+1).padStart(2,'0')}.${sd.getUTCFullYear()}`;
+                    }
+                }
+            });
+            updateWeekLabel();
+        };
+
+        weekPrev.addEventListener('click', () => stepWeek(-1));
+        weekNext.addEventListener('click', () => stepWeek(1));
     }
 
     // Opacity control (ONLY for non-video layers)
