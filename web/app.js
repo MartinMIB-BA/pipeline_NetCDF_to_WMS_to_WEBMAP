@@ -798,7 +798,7 @@ async function initWMSLayer() {
 
         // 2. Set Time to Latest Available
         const { minDate, maxDate } = window.wmsMetadata.getTimeExtent();
-        if (maxDate) {
+        if (maxDate && !window._permalinkRestoring) {
             const latestTime = maxDate.toISOString();
             console.log(`🔄 Setting initial time to LATEST available: ${latestTime}`);
             currentParams.time = latestTime;

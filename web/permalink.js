@@ -231,14 +231,21 @@
         window._permalinkRestoring = true; // Signal to auto-init: don't override date/layers
     }
 
-    // Wait for layers to initialize, then restore from hash
+    // Wait for ALL initialization to complete, then restore from hash LAST
+    // Multiple passes ensure nothing overwrites our state
     setTimeout(() => {
         if (hasHashState) {
             restoreFromHash();
-            window._permalinkRestoring = false;
         }
-        scheduleHashUpdate();
-    }, 2000); // Run AFTER auto-init (which runs at ~1500ms)
+        // Second pass after a delay to override any late async inits
+        setTimeout(() => {
+            if (hasHashState) {
+                restoreFromHash();
+                window._permalinkRestoring = false;
+            }
+            scheduleHashUpdate();
+        }, 1500);
+    }, 2500);
 
     createCopyLinkButton();
 
