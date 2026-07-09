@@ -1901,8 +1901,9 @@ document.addEventListener('DOMContentLoaded', function () {
                     console.log(`✅ Metadata loaded. Layer-specific latest time: ${latestISO}`);
 
                     // Update the global time input so addLayer() picks up the right value
+                    // BUT skip if permalink is restoring a shared state
                     const timeInput = document.getElementById('time-select');
-                    if (timeInput) {
+                    if (timeInput && !window._permalinkRestoring) {
                         timeInput.value = latestISO.slice(0, 16); // "YYYY-MM-DDTHH:mm"
                     }
                 } else {

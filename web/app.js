@@ -2845,34 +2845,50 @@ function applyDateRangeFromMetadata() {
     }
 
     // 2. Set currentParams.time to latest available date
+    // BUT skip if permalink is restoring a shared state
     const latestTime = maxDate.toISOString();
-    if (window.currentParams) {
-        window.currentParams.time = latestTime;
+    if (window._permalinkRestoring) {
+        console.log('🔗 Permalink restoring — skipping default time override');
+    } else {
+        if (window.currentParams) {
+            window.currentParams.time = latestTime;
+        }
+
+        // 3. Update the global time inputs in the bottom panel
+        const timeInput = document.getElementById('time-select');
+        const dateInput = document.getElementById('date-select');
+        const hourInput = document.getElementById('hour-select');
+
+        if (timeInput) {
+            if (dateInput) {
+                dateInput.min = minDate.toISOString().slice(0, 10);
+                dateInput.max = maxDate.toISOString().slice(0, 10);
+                dateInput.value = latestTime.slice(0, 10);
+            }
+
+            if (hourInput) {
+                hourInput.value = latestTime.slice(11, 13) >= '12' ? '12' : '00';
+            }
+
+            timeInput.min = minDate.toISOString().slice(0, 16);
+            timeInput.max = maxDate.toISOString().slice(0, 16);
+            timeInput.value = latestTime.slice(0, 16); // "YYYY-MM-DDTHH:MM"
+
+            // Trigger change event so any listeners update
+            timeInput.dispatchEvent(new Event('change'));
+        }
     }
 
-    // 3. Update the global time inputs in the bottom panel
-    const timeInput = document.getElementById('time-select');
-    const dateInput = document.getElementById('date-select');
-    const hourInput = document.getElementById('hour-select');
-
-    if (timeInput) {
-        // Enforce boundary limits natively on the Date calendar explicitly
-        if (dateInput) {
-            dateInput.min = minDate.toISOString().slice(0, 10);
-            dateInput.max = maxDate.toISOString().slice(0, 10);
-            dateInput.value = latestTime.slice(0, 10);
-        }
-
-        if (hourInput) {
-            hourInput.value = latestTime.slice(11, 13) >= '12' ? '12' : '00';
-        }
-
-        timeInput.min = minDate.toISOString().slice(0, 16);
-        timeInput.max = maxDate.toISOString().slice(0, 16);
-        timeInput.value = latestTime.slice(0, 16); // "YYYY-MM-DDTHH:MM"
-
-        // Trigger change event so any listeners update
-        timeInput.dispatchEvent(new Event('change'));
+    // Always set date picker bounds (even when restoring permalink)
+    const timeInputBounds = document.getElementById('time-select');
+    const dateInputBounds = document.getElementById('date-select');
+    if (timeInputBounds) {
+        timeInputBounds.min = minDate.toISOString().slice(0, 16);
+        timeInputBounds.max = maxDate.toISOString().slice(0, 16);
+    }
+    if (dateInputBounds) {
+        dateInputBounds.min = minDate.toISOString().slice(0, 10);
+        dateInputBounds.max = maxDate.toISOString().slice(0, 10);
     }
 
     updateGlobalDateControlsForLayer(getCurrentLayerIdForGlobalTime(), 'metadata init');

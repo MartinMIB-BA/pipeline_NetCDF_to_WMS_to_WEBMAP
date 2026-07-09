@@ -225,14 +225,20 @@
     document.head.appendChild(style);
 
     // ── Init ───────────────────────────────────────────────────
-    // Wait for layers to initialize, then try to restore from hash
+    // Check immediately if there's a hash to restore (set flag BEFORE auto-init runs)
+    const hasHashState = window.location.hash.length > 1;
+    if (hasHashState) {
+        window._permalinkRestoring = true; // Signal to auto-init: don't override date/layers
+    }
+
+    // Wait for layers to initialize, then restore from hash
     setTimeout(() => {
-        const wasRestored = restoreFromHash();
-        if (!wasRestored) {
-            // No hash — just start updating hash from current state
-            scheduleHashUpdate();
+        if (hasHashState) {
+            restoreFromHash();
+            window._permalinkRestoring = false;
         }
-    }, 1500); // Give layers time to auto-init
+        scheduleHashUpdate();
+    }, 2000); // Run AFTER auto-init (which runs at ~1500ms)
 
     createCopyLinkButton();
 
