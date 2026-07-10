@@ -584,6 +584,8 @@ def verify_browser_url_alignment(bboxes: list[tuple]) -> bool | None:
             continue
         if params.get('format') != 'image/png8':
             continue  # plain-png side path isn't warmed; don't count it against alignment
+        if params.get('SRS') != 'EPSG:900913x2':
+            continue  # staging/develop frontend sends SRS=EPSG:900913 — deliberately not warmed
         layer = params.get('layers', '')
         if not layer.startswith(f'{WORKSPACE}:'):
             continue
