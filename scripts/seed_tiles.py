@@ -364,23 +364,22 @@ process.stdout.write(JSON.stringify(out));
 
 def _build_tile_url(layer: str, time_val: str, elev_val: str, bbox_str: str) -> str:
     """
-    Build the exact tile URL the Leaflet preload system sends.
+    Build the exact tile URL the production browser (Leaflet) sends.
 
     IMPORTANT: bbox commas must be literal, NOT percent-encoded (%2C).
-    Nginx cache key = full URI string. Leaflet sends raw commas in bbox,
-    so we must do the same — using requests' params= would encode them as %2C
-    and the cache keys would never match.
+    Nginx cache key = "$request_method$request_uri" (full URI string). Leaflet
+    sends raw commas in bbox, so we must do the same — using requests' params=
+    would encode them as %2C and the cache keys would never match.
 
-    CRITICAL: parameter ORDER must match the exact order that the Leaflet preload
-    system sends, otherwise the nginx cache key (full URI string) won't match
-    and every request here (warm-up or verification) will be a cache MISS for
-    real app traffic. Order verified from actual browser network requests:
-    service, request, styles, format, transparent, version, tiled, SRS, srs,
-    width, height, layers, time, elevation  [bbox appended last]
-
-    Shared by _warmup_single() and _verify_single() so both always build the
-    identical URL — if this drifts from the browser, verify_nginx_warmup()
-    surfaces it as a low hit ratio instead of failing silently.
+    CRITICAL: parameter ORDER must byte-match the browser's. Measured from live
+    production traffic (2026-07-10, 4897/4901 requests):
+      service, request, layers, styles, format, transparent, version,
+      time, elevation, tiled, SRS, srs, width, height  [bbox appended last]
+    A previous version had layers/time/elevation in a different position —
+    every warm-up request wrote a cache key no browser ever hit, even though
+    the bbox strings were already byte-identical. Any drift here is now caught
+    by verify_browser_url_alignment(), which rebuilds real logged browser URIs
+    through THIS function and requires byte equality.
 
     bbox_str is used VERBATIM — it was serialized inside Leaflet-under-Node
     (compute_tile_bboxes), so no Python float formatting may touch it.
@@ -388,18 +387,18 @@ def _build_tile_url(layer: str, time_val: str, elev_val: str, bbox_str: str) -> 
     qs = urllib.parse.urlencode({
         'service':     'WMS',
         'request':     'GetMap',
+        'layers':      f'{WORKSPACE}:{layer}',
         'styles':      '',
         'format':      'image/png8',
         'transparent': 'true',
         'version':     '1.1.1',
+        'time':        time_val,
+        'elevation':   elev_val,
         'tiled':       'true',
         'SRS':         'EPSG:900913x2',
         'srs':         'EPSG:3857',
         'width':       '512',
         'height':      '512',
-        'layers':      f'{WORKSPACE}:{layer}',
-        'time':        time_val,
-        'elevation':   elev_val,
     })
     return f"{NGINX_WARMUP_URL}/geoserver/gwc/service/wms?{qs}&bbox={bbox_str}"
 
@@ -489,7 +488,7 @@ def verify_nginx_warmup(layer: str, time_vals: list[str], elev_vals: list[str],
 
     This confirms nginx actually WROTE the cache entries (writability, zone
     capacity, eviction). It cannot detect drift from the browser on its own —
-    it re-requests our own URLs — which is why verify_browser_bbox_alignment()
+    it re-requests our own URLs — which is why verify_browser_url_alignment()
     exists as the second, independent check against real user traffic.
 
     Returns True if the sampled hit ratio meets CACHE_VERIFY_MIN_HIT_RATIO.
@@ -527,33 +526,30 @@ def verify_nginx_warmup(layer: str, time_vals: list[str], elev_vals: list[str],
 
 
 BROWSER_ALIGN_TAIL_LINES = 300000   # how much recent access log to sample
-BROWSER_ALIGN_MIN_RATIO  = 0.90     # warn if <90% of browser bboxes are in our set
+BROWSER_ALIGN_MIN_RATIO  = 0.90     # warn if <90% of browser URIs rebuild byte-identically
 
 
-def verify_browser_bbox_alignment(bboxes: list[tuple]) -> bool | None:
+def verify_browser_url_alignment(bboxes: list[tuple]) -> bool | None:
     """
-    The drift detector: compare our generated bbox strings against what REAL
-    browsers actually sent, straight from the nginx access log.
+    The drift detector: prove that _build_tile_url() produces byte-for-byte the
+    same URIs real browsers send, using the nginx access log as ground truth.
 
-    verify_nginx_warmup() only re-requests our own URLs, so it passes even when
-    every warmed key is dead (that exact blind spot hid the hand-rolled-math
-    drift for weeks). This check has no such self-reference: it tails recent
-    log lines, keeps GWC GetMap requests from real clients (excludes our own
-    warm-up IP), classifies each bbox by tile width onto a seeded gridset
-    level, and requires that our generated set contains the browser's exact
-    string. Any engine change, Leaflet upgrade, or serialization difference
-    shows up here immediately as a dropped match ratio.
+    For every recent real-browser GWC GetMap request (own warm-up IP excluded,
+    png8 + production-shape only), it parses out layer/time/elevation/bbox and
+    REBUILDS the URI through _build_tile_url(). The rebuilt string must equal
+    the logged one exactly — the nginx cache key is "$request_method$request_uri",
+    so equality here is equality of cache keys.
 
-    Returns True (aligned), False (misaligned → warn), or None (no browser
-    traffic to compare against — nothing to verify).
+    History of why this is strict: bbox-only comparison previously reported
+    100% aligned while the PARAMETER ORDER was wrong (layers/time/elevation in
+    a different position), so every warm-up request still wrote a dead cache
+    key. Full-URI rebuild-equality has no such blind spot: any param reorder,
+    SRS/format/width change, or encoding difference fails it immediately.
+
+    Returns True (aligned), False (misaligned → warn), or None (no comparable
+    browser traffic in the log).
     """
-    generated = {b[3] for b in bboxes}
-    # expected tile width per gridset zoom, derived from the generated set itself
-    widths: dict[int, float] = {}
-    for z, _c, _r, s in bboxes:
-        if z not in widths:
-            parts = s.split(',')
-            widths[z] = float(parts[2]) - float(parts[0])
+    generated_bboxes = {b[3] for b in bboxes}
 
     try:
         result = subprocess.run(
@@ -565,50 +561,68 @@ def verify_browser_bbox_alignment(bboxes: list[tuple]) -> bool | None:
         print(f"  ⚠️  Browser-alignment check skipped (cannot read access log): {exc}")
         return None
 
-    bbox_re = re.compile(r'bbox=([0-9eE+.,%-]+)')
+    uri_re = re.compile(r'"GET (\S+) HTTP')
+    prefix_len = len(NGINX_WARMUP_URL)
     total = matched = 0
-    mismatch_samples: list[str] = []
+    mismatch_samples: list[tuple[str, str]] = []
+    known_layers = set(LAYERS)
 
     for line in lines:
-        if 'gwc/service/wms' not in line or 'GetMap' not in line:
+        if 'gwc/service/wms' not in line or 'request=GetMap' not in line:
             continue
         fields = line.split()
         if len(fields) < 2 or fields[1] == WARMUP_SOURCE_IP:
             continue  # skip our own warm-up traffic — that's the self-reference trap
-        m = bbox_re.search(line)
+        m = uri_re.search(line)
         if not m:
             continue
-        s = urllib.parse.unquote(m.group(1))
+        uri = m.group(1)
         try:
-            mnx, _mny, mxx, _mxy = map(float, s.split(','))
-        except ValueError:
+            query = uri.split('?', 1)[1]
+            params = dict(urllib.parse.parse_qsl(query, keep_blank_values=True))
+        except (IndexError, ValueError):
             continue
-        w = mxx - mnx
-        z = next((z for z, exp in widths.items() if exp > 0 and abs(w - exp) / exp < 1e-6), None)
-        if z is None:
-            continue  # deeper zoom — not seeded, browser renders on the fly
+        if params.get('format') != 'image/png8':
+            continue  # plain-png side path isn't warmed; don't count it against alignment
+        layer = params.get('layers', '')
+        if not layer.startswith(f'{WORKSPACE}:'):
+            continue
+        layer = layer.split(':', 1)[1]
+        if layer not in known_layers:
+            continue
+        raw_bbox = re.search(r'(?:\?|&)bbox=([^&]*)', uri)
+        if not raw_bbox:
+            continue
+        bbox_str = raw_bbox.group(1)
+        if bbox_str not in generated_bboxes:
+            continue  # deeper zoom than we seed — browser renders on the fly, not our key space
+        if 'time' not in params or 'elevation' not in params:
+            continue
+
+        rebuilt = _build_tile_url(layer, params['time'], params['elevation'], bbox_str)
+        rebuilt_uri = rebuilt[prefix_len:]  # strip http://localhost — compare path?query only
+
         total += 1
-        if s in generated:
+        if rebuilt_uri == uri:
             matched += 1
-        elif len(mismatch_samples) < 3:
-            mismatch_samples.append(s)
+        elif len(mismatch_samples) < 2:
+            mismatch_samples.append((uri, rebuilt_uri))
 
     if total == 0:
-        print("  ℹ️  Browser-alignment check: no recent real-browser GWC traffic in log — nothing to verify")
+        print("  ℹ️  Browser-alignment check: no comparable real-browser GWC traffic in log — nothing to verify")
         return None
 
     ratio = matched / total
-    print(f"  🔍 Browser-alignment: {matched}/{total} real-browser bbox requests match our "
-          f"warm-up keys ({ratio:.0%})")
+    print(f"  🔍 Browser URL alignment: {matched}/{total} real-browser URIs rebuild "
+          f"byte-identically through _build_tile_url ({ratio:.0%})")
 
     if ratio < BROWSER_ALIGN_MIN_RATIO:
-        print(f"  ⚠️  WARNING: browser bbox strings diverge from warm-up keys "
-              f"(ratio {ratio:.0%} < {BROWSER_ALIGN_MIN_RATIO:.0%}). Likely causes: frontend "
-              f"Leaflet upgraded without updating scripts/vendor/leaflet-src.js (the version "
-              f"assert should have caught this), or a browser engine now serializes floats "
-              f"differently. Sample mismatches:")
-        for s in mismatch_samples:
-            print(f"       {s}")
+        print(f"  ⚠️  WARNING: warm-up URIs diverge from real browser URIs "
+              f"(ratio {ratio:.0%} < {BROWSER_ALIGN_MIN_RATIO:.0%}) — warm-up is writing cache "
+              f"keys browsers don't request. Compare and fix _build_tile_url:")
+        for browser_uri, our_uri in mismatch_samples:
+            print(f"       browser: {browser_uri[:200]}")
+            print(f"       rebuilt: {our_uri[:200]}")
         return False
 
     return True
@@ -798,7 +812,7 @@ def run_seed(dry_run: bool = False, truncate_only: bool = False, days: int = 7):
 
     # Independent drift check: do real browsers agree with our cache keys?
     if all_seeded_times and not dry_run:
-        if verify_browser_bbox_alignment(bboxes) is False:
+        if verify_browser_url_alignment(bboxes) is False:
             verify_failed = True
 
     # ── Phase 3: Write ready_dates.json ───────────────────────────────────
