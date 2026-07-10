@@ -61,6 +61,8 @@ There is **one** nginx container, **one** monitoring stack, and **one** cron —
 
 `/opt/geoserver/web_dev` is a **second, separate** clone (own `.git`), tracking `develop`, updated by `deploy-staging.sh`. It's `git sparse-checkout`'d to only materialize `web/` on disk — that subfolder is the only thing any container reads (mounted read-only as `html_dev` for port 8082). Don't expect changes to `nginx/`, `monitoring/`, or `scripts/` on `develop` to take effect via staging deploys; that infra is singular and lives only on `main`. To test infra changes, deploy to `main` (`deploy.sh`) — there's no staging environment for it.
 
+> ⚠️ **nginx config deploys need a container restart, not a reload.** `nginx/default.conf` and `nginx/staging.conf` are file-level bind mounts; `git pull` replaces them via rename (new inode), so the running container keeps reading the **old** file — `docker exec web nginx -t && nginx -s reload` will happily validate and reload the stale config. After pulling any nginx change run `docker compose restart web`, then verify the container actually sees it: `docker exec web grep <new-directive> /etc/nginx/conf.d/default.conf`.
+
 ---
 
 ## Quick Start
