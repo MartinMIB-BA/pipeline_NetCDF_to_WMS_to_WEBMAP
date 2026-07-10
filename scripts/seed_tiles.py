@@ -73,9 +73,9 @@ LEAFLET_VENDOR_PATH = os.path.join(SCRIPT_DIR, "vendor", "leaflet-src.js")
 INDEX_HTML_PATH     = os.environ.get("INDEX_HTML_PATH", "/opt/geoserver/web/index.html")
 NGINX_ACCESS_LOG    = os.environ.get("NGINX_ACCESS_LOG", "/opt/geoserver/monitoring/nginx_logs/access.log")
 WARMUP_SOURCE_IP    = os.environ.get("WARMUP_SOURCE_IP", "172.18.0.1")  # docker gateway = our own warm-up traffic
-# SRS the PRODUCTION frontend sends (staging/develop currently sends EPSG:900913).
-# Single source of truth for _build_tile_url and the URL-alignment tripwire —
-# when promoting develop's frontend to production, update this value with it.
+# SRS sent in warm-up requests. Since nginx keys tiles semantically (SRS is NOT
+# part of the cache key — see $gwc_tile_key in nginx/default.conf), this value
+# only needs to be one GWC accepts; it no longer has to match any frontend.
 WARMUP_SRS          = os.environ.get("WARMUP_SRS", "EPSG:900913x2")
 
 # Minimal browser shims so the real Leaflet build loads under plain Node.
@@ -375,15 +375,14 @@ def _build_tile_url(layer: str, time_val: str, elev_val: str, bbox_str: str) -> 
     sends raw commas in bbox, so we must do the same — using requests' params=
     would encode them as %2C and the cache keys would never match.
 
-    CRITICAL: parameter ORDER must byte-match the browser's. Measured from live
-    production traffic (2026-07-10, 4897/4901 requests):
-      service, request, layers, styles, format, transparent, version,
-      time, elevation, tiled, SRS, srs, width, height  [bbox appended last]
-    A previous version had layers/time/elevation in a different position —
-    every warm-up request wrote a cache key no browser ever hit, even though
-    the bbox strings were already byte-identical. Any drift here is now caught
-    by verify_browser_url_alignment(), which rebuilds real logged browser URIs
-    through THIS function and requires byte equality.
+    nginx keys tiles SEMANTICALLY ($gwc_tile_key: whitelisted args, any param
+    order, SRS ignored — see nginx/default.conf), so param order and SRS here
+    no longer affect cache identity. What must still byte-match the browser is
+    the raw text of each key arg: bbox (Leaflet float strings), time/format/
+    width/height encoding. verify_browser_url_alignment() guards exactly that
+    by rebuilding real logged browser requests through this function and
+    comparing semantic keys. (Param order kept in the browser's shape anyway,
+    measured 2026-07-10 — costs nothing, aids log diffing.)
 
     bbox_str is used VERBATIM — it was serialized inside Leaflet-under-Node
     (compute_tile_bboxes), so no Python float formatting may touch it.
@@ -530,25 +529,50 @@ def verify_nginx_warmup(layer: str, time_vals: list[str], elev_vals: list[str],
 
 
 BROWSER_ALIGN_TAIL_LINES = 300000   # how much recent access log to sample
-BROWSER_ALIGN_MIN_RATIO  = 0.90     # warn if <90% of browser URIs rebuild byte-identically
+BROWSER_ALIGN_MIN_RATIO  = 0.90     # warn if <90% of browser keys match our warm-up keys
+
+# Args that form nginx's semantic tile cache key — MUST mirror the
+# $gwc_tile_key map in nginx/default.conf. SRS/srs and param order are
+# deliberately absent: every frontend dialect maps onto the same key.
+_KEY_ARGS = ('request', 'layers', 'styles', 'time', 'elevation',
+             'bbox', 'format', 'width', 'height')
+
+
+def _semantic_cache_key(uri: str) -> str | None:
+    """
+    Mirror nginx's $gwc_tile_key for a GET URI (see nginx/default.conf).
+
+    Like nginx $arg_name: value taken RAW (undecoded) from the query string,
+    first match wins, name matched case-insensitively. Returns None when the
+    layers arg is missing — nginx keys those on the exact URI instead.
+    """
+    path, _, query = uri.partition('?')
+
+    def arg(name: str) -> str:
+        m = re.search(rf'(?:^|&){name}=([^&]*)', query, re.IGNORECASE)
+        return m.group(1) if m else ''
+
+    if not arg('layers'):
+        return None
+    return 'GET' + path + '|' + '|'.join(arg(a) for a in _KEY_ARGS)
 
 
 def verify_browser_url_alignment(bboxes: list[tuple]) -> bool | None:
     """
-    The drift detector: prove that _build_tile_url() produces byte-for-byte the
-    same URIs real browsers send, using the nginx access log as ground truth.
+    The drift detector: prove that warm-up requests land on the same nginx
+    cache keys as real browser traffic, using the access log as ground truth.
 
-    For every recent real-browser GWC GetMap request (own warm-up IP excluded,
-    png8 + production-shape only), it parses out layer/time/elevation/bbox and
-    REBUILDS the URI through _build_tile_url(). The rebuilt string must equal
-    the logged one exactly — the nginx cache key is "$request_method$request_uri",
-    so equality here is equality of cache keys.
+    nginx keys tiles semantically ($gwc_tile_key: whitelisted args, any param
+    order, SRS ignored — see nginx/default.conf), so this check compares
+    SEMANTIC KEYS: for every recent real-browser png8 tile request (own
+    warm-up IP excluded, both frontend dialects count), rebuild the request
+    through _build_tile_url() and require the two keys to be identical.
 
-    History of why this is strict: bbox-only comparison previously reported
-    100% aligned while the PARAMETER ORDER was wrong (layers/time/elevation in
-    a different position), so every warm-up request still wrote a dead cache
-    key. Full-URI rebuild-equality has no such blind spot: any param reorder,
-    SRS/format/width change, or encoding difference fails it immediately.
+    History: a bbox-only comparison once reported 100% aligned while the
+    param ORDER was wrong and every warmed key was dead. The semantic nginx
+    key has since removed order/SRS from the equation entirely; what remains
+    load-bearing — and what this check guards — is the raw text of each key
+    arg (bbox float strings from vendored Leaflet, time/format/size encoding).
 
     Returns True (aligned), False (misaligned → warn), or None (no comparable
     browser traffic in the log).
@@ -570,7 +594,6 @@ def verify_browser_url_alignment(bboxes: list[tuple]) -> bool | None:
     total = matched = 0
     mismatch_samples: list[tuple[str, str]] = []
     known_layers = set(LAYERS)
-    srs_seen: Counter = Counter()   # which SRS shapes real browsers actually send
 
     for line in lines:
         if 'gwc/service/wms' not in line or 'request=GetMap' not in line:
@@ -589,9 +612,6 @@ def verify_browser_url_alignment(bboxes: list[tuple]) -> bool | None:
             continue
         if params.get('format') != 'image/png8':
             continue  # plain-png side path isn't warmed; don't count it against alignment
-        srs_seen[params.get('SRS', '?')] += 1
-        if params.get('SRS') != WARMUP_SRS:
-            continue  # e.g. staging/develop frontend (SRS=EPSG:900913) — deliberately not warmed
         layer = params.get('layers', '')
         if not layer.startswith(f'{WORKSPACE}:'):
             continue
@@ -607,44 +627,33 @@ def verify_browser_url_alignment(bboxes: list[tuple]) -> bool | None:
         if 'time' not in params or 'elevation' not in params:
             continue
 
+        browser_key = _semantic_cache_key(uri)
+        if browser_key is None:
+            continue
         rebuilt = _build_tile_url(layer, params['time'], params['elevation'], bbox_str)
-        rebuilt_uri = rebuilt[prefix_len:]  # strip http://localhost — compare path?query only
+        rebuilt_key = _semantic_cache_key(rebuilt[prefix_len:])
 
         total += 1
-        if rebuilt_uri == uri:
+        if rebuilt_key == browser_key:
             matched += 1
         elif len(mismatch_samples) < 2:
-            mismatch_samples.append((uri, rebuilt_uri))
-
-    # Frontend-promotion tripwire: if most real tile traffic uses a different SRS
-    # shape than we warm, the frontend URL shape changed under us (e.g. develop
-    # with SRS=EPSG:900913 was promoted to production) and the warm-up is dead.
-    # Without this, such a flip would silently reduce this check to "no data".
-    if srs_seen:
-        dominant, dom_count = srs_seen.most_common(1)[0]
-        if dominant != WARMUP_SRS:
-            print(f"  ⚠️  WARNING: dominant real-browser SRS is '{dominant}' "
-                  f"({dom_count}/{sum(srs_seen.values())} png8 tile requests) but warm-up sends "
-                  f"'{WARMUP_SRS}' — the frontend URL shape has changed (develop promoted to "
-                  f"production?). Update _build_tile_url to the new shape; until then the "
-                  f"warm-up caches keys nobody requests. Shapes seen: {dict(srs_seen)}")
-            return False
+            mismatch_samples.append((browser_key, rebuilt_key or '(none)'))
 
     if total == 0:
         print("  ℹ️  Browser-alignment check: no comparable real-browser GWC traffic in log — nothing to verify")
         return None
 
     ratio = matched / total
-    print(f"  🔍 Browser URL alignment: {matched}/{total} real-browser URIs rebuild "
-          f"byte-identically through _build_tile_url ({ratio:.0%})")
+    print(f"  🔍 Browser key alignment: {matched}/{total} real-browser tile requests map onto "
+          f"our warm-up cache keys ({ratio:.0%})")
 
     if ratio < BROWSER_ALIGN_MIN_RATIO:
-        print(f"  ⚠️  WARNING: warm-up URIs diverge from real browser URIs "
+        print(f"  ⚠️  WARNING: browser cache keys diverge from warm-up keys "
               f"(ratio {ratio:.0%} < {BROWSER_ALIGN_MIN_RATIO:.0%}) — warm-up is writing cache "
-              f"keys browsers don't request. Compare and fix _build_tile_url:")
-        for browser_uri, our_uri in mismatch_samples:
-            print(f"       browser: {browser_uri[:200]}")
-            print(f"       rebuilt: {our_uri[:200]}")
+              f"keys browsers don't request. Compare and fix _build_tile_url / _KEY_ARGS:")
+        for browser_key, our_key in mismatch_samples:
+            print(f"       browser: {browser_key[:220]}")
+            print(f"       rebuilt: {our_key[:220]}")
         return False
 
     return True
