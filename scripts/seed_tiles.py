@@ -73,6 +73,10 @@ LEAFLET_VENDOR_PATH = os.path.join(SCRIPT_DIR, "vendor", "leaflet-src.js")
 INDEX_HTML_PATH     = os.environ.get("INDEX_HTML_PATH", "/opt/geoserver/web/index.html")
 NGINX_ACCESS_LOG    = os.environ.get("NGINX_ACCESS_LOG", "/opt/geoserver/monitoring/nginx_logs/access.log")
 WARMUP_SOURCE_IP    = os.environ.get("WARMUP_SOURCE_IP", "172.18.0.1")  # docker gateway = our own warm-up traffic
+# SRS the PRODUCTION frontend sends (staging/develop currently sends EPSG:900913).
+# Single source of truth for _build_tile_url and the URL-alignment tripwire —
+# when promoting develop's frontend to production, update this value with it.
+WARMUP_SRS          = os.environ.get("WARMUP_SRS", "EPSG:900913x2")
 
 # Minimal browser shims so the real Leaflet build loads under plain Node.
 _LEAFLET_NODE_SHIM = """
@@ -395,7 +399,7 @@ def _build_tile_url(layer: str, time_val: str, elev_val: str, bbox_str: str) -> 
         'time':        time_val,
         'elevation':   elev_val,
         'tiled':       'true',
-        'SRS':         'EPSG:900913x2',
+        'SRS':         WARMUP_SRS,
         'srs':         'EPSG:3857',
         'width':       '512',
         'height':      '512',
@@ -566,6 +570,7 @@ def verify_browser_url_alignment(bboxes: list[tuple]) -> bool | None:
     total = matched = 0
     mismatch_samples: list[tuple[str, str]] = []
     known_layers = set(LAYERS)
+    srs_seen: Counter = Counter()   # which SRS shapes real browsers actually send
 
     for line in lines:
         if 'gwc/service/wms' not in line or 'request=GetMap' not in line:
@@ -584,8 +589,9 @@ def verify_browser_url_alignment(bboxes: list[tuple]) -> bool | None:
             continue
         if params.get('format') != 'image/png8':
             continue  # plain-png side path isn't warmed; don't count it against alignment
-        if params.get('SRS') != 'EPSG:900913x2':
-            continue  # staging/develop frontend sends SRS=EPSG:900913 — deliberately not warmed
+        srs_seen[params.get('SRS', '?')] += 1
+        if params.get('SRS') != WARMUP_SRS:
+            continue  # e.g. staging/develop frontend (SRS=EPSG:900913) — deliberately not warmed
         layer = params.get('layers', '')
         if not layer.startswith(f'{WORKSPACE}:'):
             continue
@@ -609,6 +615,20 @@ def verify_browser_url_alignment(bboxes: list[tuple]) -> bool | None:
             matched += 1
         elif len(mismatch_samples) < 2:
             mismatch_samples.append((uri, rebuilt_uri))
+
+    # Frontend-promotion tripwire: if most real tile traffic uses a different SRS
+    # shape than we warm, the frontend URL shape changed under us (e.g. develop
+    # with SRS=EPSG:900913 was promoted to production) and the warm-up is dead.
+    # Without this, such a flip would silently reduce this check to "no data".
+    if srs_seen:
+        dominant, dom_count = srs_seen.most_common(1)[0]
+        if dominant != WARMUP_SRS:
+            print(f"  ⚠️  WARNING: dominant real-browser SRS is '{dominant}' "
+                  f"({dom_count}/{sum(srs_seen.values())} png8 tile requests) but warm-up sends "
+                  f"'{WARMUP_SRS}' — the frontend URL shape has changed (develop promoted to "
+                  f"production?). Update _build_tile_url to the new shape; until then the "
+                  f"warm-up caches keys nobody requests. Shapes seen: {dict(srs_seen)}")
+            return False
 
     if total == 0:
         print("  ℹ️  Browser-alignment check: no comparable real-browser GWC traffic in log — nothing to verify")
