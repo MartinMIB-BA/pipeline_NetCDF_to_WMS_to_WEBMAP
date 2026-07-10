@@ -863,8 +863,11 @@ function addLayer(layerId) {
     if (isGwcLayer) {
         wmsParams.tiled = true;
         wmsParams.version = '1.1.1';
-        wmsParams.SRS = 'EPSG:900913x2';
-        wmsParams.srs = 'EPSG:900913x2'; // GWC parser needs lowercase srs in v1.1.1
+        // Use the real projection code (EPSG:900913). GWC matches the seeded
+        // "EPSG:900913x2" gridset by resolution/bbox. Passing the gridset NAME
+        // as SRS breaks GWC's integer CRS parser (400 "For input string 900913x2").
+        wmsParams.SRS = 'EPSG:900913';
+        wmsParams.srs = 'EPSG:900913';
     }
 
     // Use external WMS URL for GloFAS layers, GWC for video, GeoServer WMS otherwise
