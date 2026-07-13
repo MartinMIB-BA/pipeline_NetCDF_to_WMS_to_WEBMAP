@@ -2041,19 +2041,24 @@ let isSyncingTimeSelect = false;
 let isUserChangingDate = false;
 
 function getCurrentLayerIdForGlobalTime() {
-    if (window.currentParams && window.currentParams.layer) return window.currentParams.layer;
+    // Choropleth (Country Hazard) layers have weekly-only dates and must NEVER
+    // drive the global date picker. If the selected date has no hazard data,
+    // syncChoroplethToGlobalDate() shows "No data available" in the layer's
+    // panel instead — the calendar stays fully open.
+    const isChoropleth = (id) => layerMetadata[id] && layerMetadata[id].type === 'choropleth';
+
+    if (window.currentParams && window.currentParams.layer && !isChoropleth(window.currentParams.layer)) {
+        return window.currentParams.layer;
+    }
     if (window.activeLayers && window.activeLayers.size > 0) {
-        // Skip choropleth layers — they have limited time range (weekly only)
-        // and should not control the global date picker bounds
         for (const [layerId, layerData] of window.activeLayers.entries()) {
             if (layerData.metadata && layerData.metadata.type === 'choropleth') continue;
             return layerId;
         }
-        // Fallback: return first layer even if choropleth
-        const first = window.activeLayers.keys().next();
-        if (!first.done) return first.value;
     }
-    return null;
+    // Only choropleth layers active — bound the picker by the primary video
+    // dataset (daily dates) rather than the hazard layer's weekly dates.
+    return Object.keys(layerMetadata).find(id => layerMetadata[id].type === 'video') || null;
 }
 
 function findClosestDate(targetDateStr, availableDates) {
@@ -2074,6 +2079,14 @@ function findClosestDate(targetDateStr, availableDates) {
 
 function updateGlobalDateControlsForLayer(layerId, reason = '') {
     if (!window.wmsMetadata || !window.wmsMetadata.loaded || !layerId) return;
+
+    // Country Hazard (choropleth) layers must never constrain the calendar —
+    // re-resolve to a video layer's daily dates (see getCurrentLayerIdForGlobalTime).
+    if (layerMetadata[layerId] && layerMetadata[layerId].type === 'choropleth') {
+        layerId = getCurrentLayerIdForGlobalTime();
+        if (!layerId || (layerMetadata[layerId] && layerMetadata[layerId].type === 'choropleth')) return;
+    }
+
     const dates = window.wmsMetadata.getAvailableDatesForLayer(layerId);
     if (!dates || dates.length === 0) return;
 

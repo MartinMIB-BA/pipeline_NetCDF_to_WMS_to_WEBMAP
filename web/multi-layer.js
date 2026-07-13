@@ -1336,24 +1336,29 @@ function syncChoroplethToGlobalDate() {
         const weeks = (window._choroplethWeeks && window._choroplethWeeks[layerId]) || [];
         const weekLabel = document.getElementById(`week-label-${layerId}`);
 
-        if (weeks.length === 0) {
-            if (weekLabel) weekLabel.textContent = 'No data available — Country Hazard';
-            return;
-        }
-
-        // Check if selected date is before the earliest available forecast week
-        const earliestWeek = new Date(weeks[0]);
-        if (selectedDate < earliestWeek) {
-            // No data for this date
+        // The global calendar is never constrained by hazard layers — instead,
+        // any selected date without a covering forecast week gets this
+        // "no data" treatment: message in the layer panel + tiles hidden.
+        const showNoData = () => {
             if (weekLabel) {
                 weekLabel.textContent = 'No data available — Country Hazard';
                 weekLabel.style.color = 'var(--warning-color)';
             }
-            // Hide tiles (send impossible time so GeoServer returns empty)
             if (layerData.wmsLayer && window.map && window.map.hasLayer(layerData.wmsLayer)) {
                 window.map.removeLayer(layerData.wmsLayer);
             }
             layerData.time = null;
+        };
+
+        if (weeks.length === 0) {
+            showNoData();
+            return;
+        }
+
+        // Selected date before the earliest available forecast week → no data
+        const earliestWeek = new Date(weeks[0]);
+        if (selectedDate < earliestWeek) {
+            showNoData();
             return;
         }
 
@@ -1367,6 +1372,17 @@ function syncChoroplethToGlobalDate() {
             } else {
                 break;
             }
+        }
+
+        // A forecast week covers [forecast_date, forecast_date + 6 days].
+        // If the selected date falls past that window (beyond the newest week,
+        // or into a gap left by a missed weekly ingest), there is no hazard
+        // data for it — say so instead of silently showing an older week.
+        const coverageEnd = new Date(matchedWeek);
+        coverageEnd.setUTCDate(coverageEnd.getUTCDate() + 7);   // exclusive end
+        if (selectedDate >= coverageEnd) {
+            showNoData();
+            return;
         }
 
         // Restore layer if it was hidden
