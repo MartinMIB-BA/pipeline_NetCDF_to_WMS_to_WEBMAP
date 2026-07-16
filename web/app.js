@@ -1329,6 +1329,26 @@ async function preloadAllFrames(forceAllFrames = false) {
         return false;
     }
 
+    // Refuse to preload a timestep that has no granule — every one of the 16
+    // frames would 400 (GeoServer InvalidDimensionValue → GWC 400) and the
+    // animation loop would spin on cache misses. Exact date+hour check against the
+    // enumerated capabilities list, so it holds for every empty timestep. This is
+    // the single choke point for BOTH callers: the Play button (startAnimation,
+    // which treats a false return as "reset to Play") and autoPreloadVideoLayer
+    // (already gated upstream — this is a backstop).
+    if (window.wmsMetadata && window.wmsMetadata.loaded) {
+        const t = currentParams.time || '';
+        const dateStr = t.slice(0, 10);
+        const hourStr = t.slice(11, 13);
+        const fullDates = window.wmsMetadata.getFullDatesForLayer(currentParams.layer);
+        const availHours = window.wmsMetadata.getAvailableHoursForLayerDate(currentParams.layer, dateStr);
+        if (dateStr && fullDates.length > 0 && !(fullDates.includes(dateStr) && availHours.includes(hourStr))) {
+            console.log(`⏭️ [PRELOAD-ALL] No granule for ${t} — refusing to preload`);
+            if (typeof window.showNoDataOverlay === 'function') window.showNoDataOverlay();
+            return false;
+        }
+    }
+
     console.log('📦 Preloading all animation frames (days 0-15) with parallel batching...');
     console.time('⏱️ Total preload time');
 
