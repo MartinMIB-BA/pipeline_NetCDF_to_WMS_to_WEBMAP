@@ -2014,6 +2014,34 @@ function refreshLayerTiles(layerId, layerData, newParams = {}) {
     if (newParams.time !== undefined) layerData.time = newParams.time;
     if (newParams.elevation !== undefined) layerData.elevation = newParams.elevation;
 
+    // Empty-timestep guard for video layers (twl75/epis_wl75). If the selected time
+    // has no granule, show the "No data available" banner straight from metadata and
+    // fire ZERO tiles. Previously the banner only appeared AFTER the base layer's
+    // tiles 400'd — i.e. after loading; this makes it proactive and load-free. Stale
+    // tiles are hidden (opacity 0, no network) so the map blanks like it did before,
+    // and the exact prior opacity is captured for restore. The user can still
+    // navigate onto empty timesteps (e.g. the half-day arrows) and gets a clean
+    // no-data state instead of a flood of 400s.
+    if (['twl75', 'epis_wl75'].includes(layerId) && window.wmsMetadata && window.wmsMetadata.loaded) {
+        if (!window.wmsMetadata.isDataAvailable(layerId, layerData.time)) {
+            console.log(`🛑 [WMS UPDATE] ${layerId} @ ${layerData.time} — no granule, showing no-data, skipping tile load`);
+            if (layerData.wmsLayer) {
+                if (layerData._opacityBeforeEmpty == null) layerData._opacityBeforeEmpty = layerData.wmsLayer.options.opacity;
+                layerData.wmsLayer.setOpacity(0);
+            }
+            _layersWithNoData.add(layerId);
+            _updateNoDataOverlay();
+            return;
+        }
+        // Valid timestep — restore visibility if we blanked it, and clear no-data state
+        // (the tile 'loading' event clears it too, but do it explicitly for immediacy).
+        if (layerData._opacityBeforeEmpty != null && layerData.wmsLayer) {
+            layerData.wmsLayer.setOpacity(layerData._opacityBeforeEmpty);
+            layerData._opacityBeforeEmpty = null;
+        }
+        if (_layersWithNoData.has(layerId)) { _layersWithNoData.delete(layerId); _updateNoDataOverlay(); }
+    }
+
     // Standard WMS: update only what changed
     const wmsUpdate = {};
     if (newParams.time !== undefined) wmsUpdate.time = newParams.time;

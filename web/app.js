@@ -2150,14 +2150,27 @@ function updateGlobalDateControlsForLayer(layerId, reason = '') {
 
     const hours = ['00', '12'];
 
-    // Restrict hour toggles to hours that actually have a granule for this date.
-    // Uses the enumerated capabilities time index (accurate since the time
-    // dimension is published as a "list"), at exact date+hour precision — so this
-    // holds for EVERY empty timestep, not a hardcoded date: a partial date keeps
-    // only its real hour, a whole-empty date returns [] and disables both. Metadata
-    // is loaded here (guaranteed by the guard at the top of this function), so []
-    // unambiguously means "no granule", never "unknown".
-    const availableHours = window.wmsMetadata.getAvailableHoursForLayerDate(layerId, nextDate);
+    // Do NOT snap the hour away from empty timesteps. The user must be able to
+    // navigate onto an empty date/hour (arrows or hour buttons) and get a clean
+    // "No data available" banner with zero tile loads — that no-data state is
+    // produced downstream (refreshLayerTiles / preload / play gates check the exact
+    // granule). Snapping here would silently redirect to a valid neighbour and the
+    // banner would never show. Both hours stay selectable; only the last-date
+    // beyond-range hour is trimmed.
+    let availableHours = hours;
+    if (dates.includes(nextDate)) {
+        const rawAvailableHours = window.wmsMetadata.getAvailableHoursForLayerDate(layerId, nextDate);
+        if (rawAvailableHours.length > 1) {
+            availableHours = rawAvailableHours;
+        } else {
+            const isLastDate = dates[dates.length - 1] === nextDate;
+            if (isLastDate) {
+                const latestTime = window.wmsMetadata.getLatestTimeForLayer(layerId);
+                const lastHour = latestTime ? new Date(latestTime).getUTCHours() : 0;
+                availableHours = lastHour < 12 ? ['00'] : ['00', '12'];
+            }
+        }
+    }
 
     hourSelect.innerHTML = '';
     hours.forEach(h => {
@@ -2181,8 +2194,7 @@ function updateGlobalDateControlsForLayer(layerId, reason = '') {
         hourSelect.value = nextHour;
         document.querySelectorAll('.hour-toggle-btn').forEach(btn => {
             const btnHour = btn.dataset.hour;
-            // Empty availableHours = no granule for this date → disable both.
-            const isAvailable = availableHours.includes(btnHour);
+            const isAvailable = availableHours.length === 0 || availableHours.includes(btnHour);
             btn.disabled = !isAvailable;
             btn.classList.toggle('hour-toggle-active', btnHour === nextHour);
             btn.classList.toggle('hour-toggle-disabled', !isAvailable);
