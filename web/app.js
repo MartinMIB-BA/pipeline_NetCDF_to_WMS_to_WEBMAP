@@ -2352,6 +2352,24 @@ function syncSplitDateToProxy() {
 document.getElementById('date-select').addEventListener('change', syncSplitDateToProxy);
 document.getElementById('hour-select').addEventListener('change', syncSplitDateToProxy);
 
+// Refuse stepping forward past the layer's LAST real granule. Empty timesteps
+// *inside* the enumerated range stay navigable on purpose (they render the clean
+// "No data available" banner — see caf46c7). This only blocks times strictly after
+// the final granule — e.g. 12:00 on the last date when only 00:00 was downloaded —
+// so the picker can't land on a phantom step that shows stale/incorrect tiles.
+function isBeyondLatestGranule(dateStr, hourStr) {
+    if (!dateStr || !hourStr) return false;
+    if (!window.wmsMetadata || !window.wmsMetadata.loaded) return false;
+    const layerId = getCurrentLayerIdForGlobalTime();
+    if (!layerId) return false;
+    const latestIso = window.wmsMetadata.getLatestTimeForLayer(layerId);
+    if (!latestIso) return false;
+    const latest = new Date(latestIso);
+    const target = new Date(`${dateStr}T${hourStr}:00:00.000Z`);
+    if (isNaN(latest.getTime()) || isNaN(target.getTime())) return false;
+    return target.getTime() > latest.getTime();
+}
+
 // Stepper logic for Date/Time navigation — half-day steps (00:00 ↔ 12:00)
 document.getElementById('date-prev').addEventListener('click', () => {
     const ds = document.getElementById('date-select');
@@ -2373,6 +2391,7 @@ document.getElementById('date-next').addEventListener('click', () => {
     const hs = document.getElementById('hour-select');
     if (!ds || !ds.value || !hs) return;
     if (hs.value === '00') {
+        if (isBeyondLatestGranule(ds.value, '12')) return; // no 12:00 granule on the last date
         setHour('12');
     } else {
         if (ds.max && ds.value >= ds.max) return; // already at max date
@@ -2395,7 +2414,13 @@ function setHour(h) {
 }
 
 document.querySelectorAll('.hour-toggle-btn').forEach(btn => {
-    btn.addEventListener('click', () => setHour(btn.dataset.hour));
+    btn.addEventListener('click', () => {
+        const ds = document.getElementById('date-select');
+        // Block a direct jump to a phantom step past the last granule (e.g. 12:00
+        // on the final date when only 00:00 exists). Mid-range empty steps are fine.
+        if (ds && ds.value && isBeyondLatestGranule(ds.value, btn.dataset.hour)) return;
+        setHour(btn.dataset.hour);
+    });
 });
 
 // Keyboard arrow navigation: ← → = half-day, Shift+← Shift+→ = full day
@@ -2418,7 +2443,10 @@ document.addEventListener('keydown', (e) => {
         ds.value = next;
         syncSplitDateToProxy();
     } else {
-        if (dir === 1 && hs.value === '00') { setHour('12'); }
+        if (dir === 1 && hs.value === '00') {
+            if (isBeyondLatestGranule(ds.value, '12')) return; // no 12:00 granule on the last date
+            setHour('12');
+        }
         else if (dir === 1 && hs.value === '12') {
             if (ds.max && ds.value >= ds.max) return;
             const d = new Date(ds.value);
