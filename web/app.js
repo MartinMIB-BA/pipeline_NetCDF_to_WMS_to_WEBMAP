@@ -1512,7 +1512,26 @@ window.autoPreloadVideoLayer = async function (layerId, _retryCount = 0) {
     const layerData = window.activeLayers && window.activeLayers.get(layerId);
     if (!layerData) return;
 
-    // Skip preload for dates not in readyDates — would cause 400s from GeoServer
+    // Skip preload for timesteps that have no granule at all — GeoServer answers
+    // these with InvalidDimensionValue, which GWC re-emits as a 400 for every tile
+    // in the 16-frame grid (the flood seen in the HAR). Checked at exact date+hour
+    // against the enumerated capabilities list, so it holds for EVERY empty
+    // timestep — whole-empty dates AND partial dates missing one of 00:00/12:00 —
+    // regardless of how the time was set (picker, share link, animation step).
+    if (window.wmsMetadata && window.wmsMetadata.loaded) {
+        const t = layerData.time || '';
+        const dateStr = t.slice(0, 10);
+        const hourStr = t.slice(11, 13);
+        const fullDates = window.wmsMetadata.getFullDatesForLayer(layerId);
+        const availHours = window.wmsMetadata.getAvailableHoursForLayerDate(layerId, dateStr);
+        if (dateStr && fullDates.length > 0 && !(fullDates.includes(dateStr) && availHours.includes(hourStr))) {
+            console.log(`⏭️ [PRELOAD] Skipping ${layerId} — no granule for ${t}`);
+            return; // base WMS still renders on-the-fly; overlay handled by tile load/error events
+        }
+    }
+
+    // Skip preload for dates not yet in readyDates — avoids preloading frames that
+    // aren't GWC+nginx warmed (slower, not an error). Complements the granule gate above.
     if (window.wmsMetadata && window.wmsMetadata.readyDates.size > 0) {
         const dateStr = (layerData.time || '').slice(0, 10);
         if (dateStr && !window.wmsMetadata.readyDates.has(dateStr)) {
@@ -2111,22 +2130,14 @@ function updateGlobalDateControlsForLayer(layerId, reason = '') {
 
     const hours = ['00', '12'];
 
-    // For dates in readyDates: check actual available hours.
-    // For dates in range but not in readyDates: default to both hours.
-    let availableHours = hours;
-    if (dates.includes(nextDate)) {
-        const rawAvailableHours = window.wmsMetadata.getAvailableHoursForLayerDate(layerId, nextDate);
-        if (rawAvailableHours.length > 1) {
-            availableHours = rawAvailableHours;
-        } else {
-            const isLastDate = dates[dates.length - 1] === nextDate;
-            if (isLastDate) {
-                const latestTime = window.wmsMetadata.getLatestTimeForLayer(layerId);
-                const lastHour = latestTime ? new Date(latestTime).getUTCHours() : 0;
-                availableHours = lastHour < 12 ? ['00'] : ['00', '12'];
-            }
-        }
-    }
+    // Restrict hour toggles to hours that actually have a granule for this date.
+    // Uses the enumerated capabilities time index (accurate since the time
+    // dimension is published as a "list"), at exact date+hour precision — so this
+    // holds for EVERY empty timestep, not a hardcoded date: a partial date keeps
+    // only its real hour, a whole-empty date returns [] and disables both. Metadata
+    // is loaded here (guaranteed by the guard at the top of this function), so []
+    // unambiguously means "no granule", never "unknown".
+    const availableHours = window.wmsMetadata.getAvailableHoursForLayerDate(layerId, nextDate);
 
     hourSelect.innerHTML = '';
     hours.forEach(h => {
@@ -2150,7 +2161,8 @@ function updateGlobalDateControlsForLayer(layerId, reason = '') {
         hourSelect.value = nextHour;
         document.querySelectorAll('.hour-toggle-btn').forEach(btn => {
             const btnHour = btn.dataset.hour;
-            const isAvailable = availableHours.length === 0 || availableHours.includes(btnHour);
+            // Empty availableHours = no granule for this date → disable both.
+            const isAvailable = availableHours.includes(btnHour);
             btn.disabled = !isAvailable;
             btn.classList.toggle('hour-toggle-active', btnHour === nextHour);
             btn.classList.toggle('hour-toggle-disabled', !isAvailable);
