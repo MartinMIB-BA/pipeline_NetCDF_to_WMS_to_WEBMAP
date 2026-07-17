@@ -4,7 +4,8 @@ backfill.py — Manually backfill WMS data for a full year (or custom range).
 
 Scans the JRC FTP server for all months of the given year, downloads any
 files not yet processed (checked against PostgreSQL tracking), and runs
-them through the full worker pipeline (static_wms, video_wms, points_wms).
+them through the full worker pipeline (static_wms, video_wms, points_wms,
+summary_points_wms).
 
 Usage:
     python backfill.py                        # full year 2026 (default)
@@ -30,9 +31,10 @@ from lib.download import parse_timestamp_from_filename, iterate_files_in_periods
 
 # ─── Workers ───────────────────────────────────────────────────────────────────
 WORKERS = [
-    ("static_wms",  "workers.static_wms"),
-    ("video_wms",   "workers.video_wms"),
-    ("points_wms",  "workers.points_wms"),
+    ("static_wms",          "workers.static_wms"),
+    ("video_wms",           "workers.video_wms"),
+    ("points_wms",          "workers.points_wms"),
+    ("summary_points_wms",  "workers.summary_points_wms"),
 ]
 
 

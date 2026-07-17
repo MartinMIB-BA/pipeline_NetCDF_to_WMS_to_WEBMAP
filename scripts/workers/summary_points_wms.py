@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Static WMS worker - processes probability layers with TIME dimension only."""
+"""Summary Points WMS worker - processes coastal summary data (no RP dimension, TIME only)."""
 
 from __future__ import annotations
 
@@ -7,8 +7,9 @@ import argparse
 import os
 import re
 import zipfile
-import json  # [MAPPING UPDATE] Added json import
+import json
 
+import numpy as np
 import xarray as xr
 import rioxarray  # noqa
 
@@ -24,56 +25,22 @@ from lib.geoserver import (
     enable_time_dim,
     set_default_style,
 )
-from lib.netcdf_utils import parse_issue_dt_12_from_nc, yyyymmddhhmm_to_iso, ensure_lat_lon
+from lib.netcdf_utils import parse_issue_dt_12_from_nc, yyyymmddhhmm_to_iso, ensure_lat_lon_da
 from lib.postgis import ensure_postgis_schema, ensure_layer_indexes
 
 
-# Variables to process
+# Coastal summary variables to process (single value per point, no RP dimension)
 VARS = [
-    "probability_epis10y_1_1",
-    "probability_epis10y_1_3",
-    "probability_epis10y_1_15",
-    "probability_epis10y_4_15",
-    "probability_epis10y_10_15",
-    "probability_epis100y_1_1",
-    "probability_epis100y_1_3",
-    "probability_epis100y_1_15",
-    "probability_epis100y_4_15",
-    "probability_epis100y_10_15",
-    "probability_epis500y_1_1",
-    "probability_epis500y_1_3",
-    "probability_epis500y_1_15",
-    "probability_epis500y_4_15",
-    "probability_epis500y_10_15",
-
-    "probability_twl10y_1_1",
-    "probability_twl10y_1_3",
-    "probability_twl10y_1_15",
-    "probability_twl10y_4_15",
-    "probability_twl10y_10_15",
-    "probability_twl100y_1_1",
-    "probability_twl100y_1_3",
-    "probability_twl100y_1_15",
-    "probability_twl100y_4_15",
-    "probability_twl100y_10_15",
-
-    "probability_twl500y_1_1",
-    "probability_twl500y_1_3",
-    "probability_twl500y_1_15",
-    "probability_twl500y_4_15",
-    "probability_twl500y_10_15",
-
-    # Summary gridded layers (categorical 0-9)
-    "summary_twl_01_01",
-    "summary_twl_01_03",
-    "summary_twl_01_15",
-    "summary_twl_04_15",
-    "summary_twl_10_15",
-    "summary_epis_01_01",
-    "summary_epis_01_03",
-    "summary_epis_01_15",
-    "summary_epis_04_15",
-    "summary_epis_10_15",
+    "summary_twl_coast_01_01",
+    "summary_twl_coast_01_03",
+    "summary_twl_coast_01_15",
+    "summary_twl_coast_04_15",
+    "summary_twl_coast_10_15",
+    "summary_epis_coast_01_01",
+    "summary_epis_coast_01_03",
+    "summary_epis_coast_01_15",
+    "summary_epis_coast_04_15",
+    "summary_epis_coast_10_15",
 ]
 
 
@@ -86,7 +53,7 @@ def write_mosaic_config(
     pg_user: str,
     pg_pass: str,
 ) -> None:
-    """Write ImageMosaic configuration for TIME dimension only."""
+    """Write ImageMosaic configuration for TIME dimension only (no elevation)."""
     with open(os.path.join(mosaic_dir, "indexer.properties"), "w") as f:
         f.write(
             "Schema=*the_geom:Polygon,location:String,ingestion:java.util.Date\n"
@@ -124,7 +91,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     p.add_argument("--workspace", default=config.WORKSPACE)
     p.add_argument("--user", default=config.GEOSERVER_USER)
     p.add_argument("--password", default=config.GEOSERVER_PASSWORD)
-    p.add_argument("--style", default=config.STYLE_NAME)
+    p.add_argument("--style", default=config.SUMMARY_STYLE)
     p.add_argument("--pg-host-local", default=config.PG_HOST_LOCAL)
     p.add_argument("--pg-port", type=int, default=config.PG_PORT)
     p.add_argument("--pg-db", default=config.PG_DB)
@@ -139,15 +106,14 @@ def build_arg_parser() -> argparse.ArgumentParser:
 
 
 def main() -> None:
-    """Process static probability layers and upload to GeoServer."""
+    """Process coastal summary point data and upload to GeoServer."""
     args = build_arg_parser().parse_args()
-    
-    # [MAPPING UPDATE] Load variable mapping
+
+    # Load variable mapping
     script_dir = os.path.dirname(os.path.abspath(__file__))
     mapping_path = os.path.join(script_dir, "../variable_mapping.json")
     with open(mapping_path) as f:
         mapping = json.load(f)
-        # Remove comments from mapping if present
         if "__comment__" in mapping:
             del mapping["__comment__"]
 
@@ -160,12 +126,9 @@ def main() -> None:
     if not nc_files:
         raise RuntimeError(f"No .nc files in {args.input_dir}")
 
-    # [MAPPING UPDATE] Iterate through requested variables (store names)
     for store_name in args.vars:
-        # Get aliases from mapping, default to store_name itself if not found
         source_aliases = mapping.get(store_name, [store_name])
         var_name = store_name
-
         schema = re.sub(r"[^a-z0-9_]+", "_", store_name.lower())
 
         exists = store_exists(args.geoserver_url, auth, args.workspace, store_name)
@@ -203,9 +166,8 @@ def main() -> None:
         # Process NetCDF files
         skipped_count = 0
         processed_count = 0
-        
+
         for fn in nc_files:
-            issue_dt12 = parse_issue_dt_12_from_nc(fn)
             path = os.path.join(args.input_dir, fn)
 
             try:
@@ -216,50 +178,87 @@ def main() -> None:
                 print(f"      Will retry automatically on next cron run.\n")
                 continue
 
-            # [MAPPING UPDATE] Find which alias exists in this file
+            # Find which alias exists in this file
             valid_alias = None
             for alias in source_aliases:
                 if alias in ds:
                     valid_alias = alias
                     break
-            
+
             if not valid_alias:
-                # print(f"  [DEBUG] {store_name} not found in {fn} (tried: {source_aliases})")
                 ds.close()
                 continue
 
-            da = ds[valid_alias]
-            time_dim = "time" if "time" in da.dims else None
+            issue_dt12 = parse_issue_dt_12_from_nc(fn)
+            out_tif = os.path.join(mosaic_dir, f"{var_name}_{issue_dt12}_00.tif")
 
-            if time_dim:
-                for i in range(da.sizes[time_dim]):
-                    out_tif = os.path.join(mosaic_dir, f"{var_name}_{issue_dt12}_{i:02d}.tif")
-                    
-                    if os.path.exists(out_tif):
-                        skipped_count += 1
-                        continue
-                    
-                    frame = da.isel({time_dim: i})
-                    frame = ensure_lat_lon(frame).astype("float32")
-                    frame.rio.write_nodata(-9999.0, inplace=True)
-                    frame.rio.to_raster(out_tif, compress="LZW", tiled=True, blockxsize=256, blockysize=256)
-                    processed_count += 1
-                    wrote_any = True
-            else:
-                out_tif = os.path.join(mosaic_dir, f"{var_name}_{issue_dt12}_00.tif")
-                
-                if os.path.exists(out_tif):
-                    skipped_count += 1
-                else:
-                    frame = ensure_lat_lon(da).astype("float32")
-                    frame.rio.write_nodata(-9999.0, inplace=True)
-                    frame.rio.to_raster(out_tif, compress="LZW", tiled=True, blockxsize=256, blockysize=256)
-                    processed_count += 1
-                    wrote_any = True
+            if os.path.exists(out_tif):
+                skipped_count += 1
+                ds.close()
+                continue
+
+            print(f"\nProcessing {fn} - var={var_name}, issue={issue_dt12}")
+
+            # Extract coastal point coordinates
+            lat1d = ds["latitudeSATcoast"].values
+            lon1d = ds["longitudeSATcoast"].values
+
+            # Remove NaN coordinates
+            mask = (~np.isnan(lat1d)) & (~np.isnan(lon1d))
+            lat1d = lat1d[mask]
+            lon1d = lon1d[mask]
+
+            # Compute real pixel size
+            dx = np.median(np.diff(np.unique(lon1d)))
+            dy = np.median(np.diff(np.unique(lat1d)))
+            print(f"  Detected coastal dx={dx}, dy={dy}")
+
+            # Build regular grid
+            min_lon = lon1d.min()
+            max_lon = lon1d.max()
+            min_lat = lat1d.min()
+            max_lat = lat1d.max()
+
+            lons = np.arange(min_lon, max_lon + dx, dx)
+            lats = np.arange(min_lat, max_lat + dy, dy)
+
+            # Create mapping
+            lon_to_idx = {v: i for i, v in enumerate(lons)}
+            lat_to_idx = {v: i for i, v in enumerate(lats)}
+
+            # Snap original irregular lon/lat to nearest regular cell
+            snapped_lon = np.array([lons[np.argmin(np.abs(lons - x))] for x in lon1d])
+            snapped_lat = np.array([lats[np.argmin(np.abs(lats - y))] for y in lat1d])
+
+            # Extract values — 1D array (no RP dimension)
+            vals = ds[valid_alias].values[mask].astype("float32")
+
+            # Create empty grid and fill
+            grid = np.full((len(lats), len(lons)), np.nan, dtype="float32")
+            for i in range(len(vals)):
+                iy = lat_to_idx[snapped_lat[i]]
+                ix = lon_to_idx[snapped_lon[i]]
+                grid[iy, ix] = vals[i]
+
+            # Convert to DataArray
+            da = xr.DataArray(
+                grid,
+                coords={"lat": lats, "lon": lons},
+                dims=("lat", "lon"),
+            )
+
+            da = ensure_lat_lon_da(da)
+            da.rio.write_nodata(-9999.0, inplace=True)
+
+            # Save as GeoTIFF
+            da.rio.to_raster(out_tif, compress="LZW", tiled=True, blockxsize=256, blockysize=256)
+            print(f"  Saved {out_tif}")
+            processed_count += 1
+            wrote_any = True
 
             ds.close()
             times_for_test.append(issue_dt12)
-        
+
         if skipped_count > 0:
             print(f"  Skipped {skipped_count} existing file(s)")
         if processed_count > 0:
@@ -289,7 +288,6 @@ def main() -> None:
                     arc = os.path.relpath(full, mosaic_dir)
                     z.write(full, arc)
 
-        #configure = "none" if exists else "all"
         configure = "all"
         r = upload_zip(args.geoserver_url, auth, args.workspace, store_name, zip_path, configure)
         if r.status_code >= 300:
@@ -298,19 +296,16 @@ def main() -> None:
         # Reharvest if needed
         if exists and not args.no_reharvest:
             gs_mosaic_dir = f"{args.geoserver_data_dir}/data/{args.workspace}/{store_name}"
-            #gs_mosaic_dir = f"file://{args.geoserver_data_dir}/data/{args.workspace}/{store_name}"
             reharvest_mosaic(args.geoserver_url, auth, args.workspace, store_name, gs_mosaic_dir)
 
-        # Enable dimensions
+        # Enable TIME dimension only (no elevation for summary layers)
         covs = wait_coverages(args.geoserver_url, auth, args.workspace, store_name, timeout=90)
         if not covs:
             raise RuntimeError(f"Store created but no coverages detected for {store_name}")
 
         for cov in covs:
             enable_time_dim(args.geoserver_url, auth, args.workspace, store_name, cov)
-            # Use SUMMARY_WMS style for summary layers, default style for others
-            layer_style = config.SUMMARY_STYLE if store_name.startswith("summary_") else args.style
-            set_default_style(args.geoserver_url, auth, args.workspace, cov, layer_style)
+            set_default_style(args.geoserver_url, auth, args.workspace, cov, args.style)
 
         # Ensure performance indexes
         ensure_layer_indexes(

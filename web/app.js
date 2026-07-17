@@ -430,6 +430,30 @@ const layerMetadata = {
     'country_epis_summary': { type: 'choropleth', hasElevation: false, hasTime: true, style: 'E_and_T:chloropleth_epis_summary', description: 'Country hazard — Episodic Water Level summary score (1–10)' },
     'country_twl_summary': { type: 'choropleth', hasElevation: false, hasTime: true, style: 'E_and_T:twl_summary', description: 'Country hazard — Total Water Level summary score (1–10)' },
 
+    // Summary gridded layers (categorical 0-9, plasma_r)
+    'summary_twl_01_01': { type: 'summary', hasElevation: false, description: 'TWL exceedance summary (1d)' },
+    'summary_twl_01_03': { type: 'summary', hasElevation: false, description: 'TWL exceedance summary (1-3d)' },
+    'summary_twl_01_15': { type: 'summary', hasElevation: false, description: 'TWL exceedance summary (1-15d)' },
+    'summary_twl_04_15': { type: 'summary', hasElevation: false, description: 'TWL exceedance summary (4-15d)' },
+    'summary_twl_10_15': { type: 'summary', hasElevation: false, description: 'TWL exceedance summary (10-15d)' },
+    'summary_epis_01_01': { type: 'summary', hasElevation: false, description: 'Epis exceedance summary (1d)' },
+    'summary_epis_01_03': { type: 'summary', hasElevation: false, description: 'Epis exceedance summary (1-3d)' },
+    'summary_epis_01_15': { type: 'summary', hasElevation: false, description: 'Epis exceedance summary (1-15d)' },
+    'summary_epis_04_15': { type: 'summary', hasElevation: false, description: 'Epis exceedance summary (4-15d)' },
+    'summary_epis_10_15': { type: 'summary', hasElevation: false, description: 'Epis exceedance summary (10-15d)' },
+
+    // Summary coastal point layers (categorical 0-9, no RP dimension)
+    'summary_twl_coast_01_01': { type: 'summary', hasElevation: false, description: 'TWL coastal summary (1d)' },
+    'summary_twl_coast_01_03': { type: 'summary', hasElevation: false, description: 'TWL coastal summary (1-3d)' },
+    'summary_twl_coast_01_15': { type: 'summary', hasElevation: false, description: 'TWL coastal summary (1-15d)' },
+    'summary_twl_coast_04_15': { type: 'summary', hasElevation: false, description: 'TWL coastal summary (4-15d)' },
+    'summary_twl_coast_10_15': { type: 'summary', hasElevation: false, description: 'TWL coastal summary (10-15d)' },
+    'summary_epis_coast_01_01': { type: 'summary', hasElevation: false, description: 'Epis coastal summary (1d)' },
+    'summary_epis_coast_01_03': { type: 'summary', hasElevation: false, description: 'Epis coastal summary (1-3d)' },
+    'summary_epis_coast_01_15': { type: 'summary', hasElevation: false, description: 'Epis coastal summary (1-15d)' },
+    'summary_epis_coast_04_15': { type: 'summary', hasElevation: false, description: 'Epis coastal summary (4-15d)' },
+    'summary_epis_coast_10_15': { type: 'summary', hasElevation: false, description: 'Epis coastal summary (10-15d)' },
+
     // Video layers
     'epis_wl75': { type: 'video', hasElevation: true, description: 'Episode water level 75th percentile (with lead time)' },
 

@@ -53,6 +53,28 @@ const layerDisplayNames = {
     // Country choropleth layers
     'country_epis_summary': 'Episodic Water Level Summary',
     'country_twl_summary': 'Total Water Level Summary',
+    // Summary layers (gridded)
+    'summary_twl_01_01': 'Summary TWL (1d)',
+    'summary_twl_01_03': 'Summary TWL (1-3d)',
+    'summary_twl_01_15': 'Summary TWL (1-15d)',
+    'summary_twl_04_15': 'Summary TWL (4-15d)',
+    'summary_twl_10_15': 'Summary TWL (10-15d)',
+    'summary_epis_01_01': 'Summary Epis (1d)',
+    'summary_epis_01_03': 'Summary Epis (1-3d)',
+    'summary_epis_01_15': 'Summary Epis (1-15d)',
+    'summary_epis_04_15': 'Summary Epis (4-15d)',
+    'summary_epis_10_15': 'Summary Epis (10-15d)',
+    // Summary layers (coastal)
+    'summary_twl_coast_01_01': 'Summary TWL Coast (1d)',
+    'summary_twl_coast_01_03': 'Summary TWL Coast (1-3d)',
+    'summary_twl_coast_01_15': 'Summary TWL Coast (1-15d)',
+    'summary_twl_coast_04_15': 'Summary TWL Coast (4-15d)',
+    'summary_twl_coast_10_15': 'Summary TWL Coast (10-15d)',
+    'summary_epis_coast_01_01': 'Summary Epis Coast (1d)',
+    'summary_epis_coast_01_03': 'Summary Epis Coast (1-3d)',
+    'summary_epis_coast_01_15': 'Summary Epis Coast (1-15d)',
+    'summary_epis_coast_04_15': 'Summary Epis Coast (4-15d)',
+    'summary_epis_coast_10_15': 'Summary Epis Coast (10-15d)',
     // Video layers
     'epis_wl75': 'Episode WL 75',
 
@@ -77,6 +99,7 @@ const LAYER_BUBBLE_CATEGORIES = [
     { key: 'about', label: 'ABOUT', icon: 'fa-circle-info', type: 'about' },
     { key: 'static', label: 'RETURN PERIODS', icon: 'fa-layer-group', type: 'static' },
     { key: 'coastal', label: 'COASTAL POINTS', icon: 'fa-location-dot', type: 'points' },
+    { key: 'summary', label: 'SUMMARY', icon: 'fa-chart-simple', type: 'summary' },
     { key: 'choropleth', label: 'COUNTRY HAZARD', icon: 'fa-earth-europe', type: 'choropleth' },
     { key: 'video', label: 'FORECAST', icon: 'fa-film', type: 'video' },
     { key: 'glofas', label: 'GloFAS', icon: 'fa-water', type: 'glofas' }
@@ -154,6 +177,12 @@ function initializeLayerList() {
         ],
         '🗺️ COUNTRY HAZARD': [
             'country_epis_summary', 'country_twl_summary'
+        ],
+        '📊 SUMMARY': [
+            'summary_twl_01_01', 'summary_twl_01_03', 'summary_twl_01_15', 'summary_twl_04_15', 'summary_twl_10_15',
+            'summary_epis_01_01', 'summary_epis_01_03', 'summary_epis_01_15', 'summary_epis_04_15', 'summary_epis_10_15',
+            'summary_twl_coast_01_01', 'summary_twl_coast_01_03', 'summary_twl_coast_01_15', 'summary_twl_coast_04_15', 'summary_twl_coast_10_15',
+            'summary_epis_coast_01_01', 'summary_epis_coast_01_03', 'summary_epis_coast_01_15', 'summary_epis_coast_04_15', 'summary_epis_coast_10_15'
         ],
         '🎥 FORECAST': [
             'epis_wl75', 'twl75'
