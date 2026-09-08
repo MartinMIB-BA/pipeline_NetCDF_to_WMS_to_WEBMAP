@@ -73,22 +73,20 @@ const map = L.map('map', {
 // unauthenticated raster requests. GISCO is an EU/Eurostat service, well-suited for this
 // Copernicus/JRC project.
 //
-// NOTE: We use GISCO's WMS GetMap endpoint (not the /tiles/ MapProxy path). The tile
-// path is TMS (Y-axis flipped) and doesn't line up with Leaflet's XYZ scheme, so tiles
-// wouldn't render. Leaflet's L.tileLayer.wms handles the WMS endpoint natively. Layer
-// names (OSMPositronComposite etc.) come from the WMS Capabilities document.
-const GISCO_WMS_URL = 'https://gisco-services.ec.europa.eu/maps/service?';
+// We use GISCO's tile (WMTS/TMS-style) endpoint, NOT the WMS GetMap endpoint.
+// The WMS GetMap output is watermarked (a "©NaturalEarth/©OpenStreetMap" banner is
+// burned across every image) since WMS is meant for preview, not production tiling.
+// The /tiles/ endpoint is clean. Its TileMatrixSet uses a top-left origin
+// (verified via WMTS Capabilities: TopLeftCorner 90 -180), i.e. it is XYZ-compatible,
+// so Leaflet's default {z}/{x}/{y} scheme lines up — no TMS Y-flip needed.
 const GISCO_ATTRIBUTION = '© <a href="https://ec.europa.eu/eurostat/web/gisco">Eurostat — GISCO</a> | © OpenStreetMap contributors';
+const GISCO_TILE = style => `https://gisco-services.ec.europa.eu/maps/tiles/${style}/EPSG3857/{z}/{x}/{y}.png`;
 
 const BASEMAP_OPTIONS = {
     gisco_positron: {
         name: 'GISCO Positron (light)',
-        wms: true,
-        url: GISCO_WMS_URL,
+        url: GISCO_TILE('OSMPositronComposite'),
         options: {
-            layers: 'OSMPositronComposite',
-            format: 'image/png',
-            version: '1.3.0',
             attribution: GISCO_ATTRIBUTION,
             maxZoom: 18,
             minZoom: 2,
@@ -97,12 +95,8 @@ const BASEMAP_OPTIONS = {
     },
     gisco_bright: {
         name: 'GISCO Bright',
-        wms: true,
-        url: GISCO_WMS_URL,
+        url: GISCO_TILE('OSMBrightComposite'),
         options: {
-            layers: 'OSMBrightComposite',
-            format: 'image/png',
-            version: '1.3.0',
             attribution: GISCO_ATTRIBUTION,
             maxZoom: 18,
             minZoom: 2,
@@ -111,12 +105,8 @@ const BASEMAP_OPTIONS = {
     },
     gisco_dark: {
         name: 'GISCO Dark Gray',
-        wms: true,
-        url: GISCO_WMS_URL,
+        url: GISCO_TILE('OSMDarkGrayComposite'),
         options: {
-            layers: 'OSMDarkGrayComposite',
-            format: 'image/png',
-            version: '1.3.0',
             attribution: GISCO_ATTRIBUTION,
             maxZoom: 18,
             minZoom: 2,
@@ -166,10 +156,7 @@ function setBaseMap(baseMapId) {
         map.removeLayer(baseLayer);
     }
 
-    // WMS basemaps (GISCO) use L.tileLayer.wms; standard XYZ tile layers use L.tileLayer.
-    baseLayer = cfg.wms
-        ? L.tileLayer.wms(cfg.url, cfg.options).addTo(map)
-        : L.tileLayer(cfg.url, cfg.options).addTo(map);
+    baseLayer = L.tileLayer(cfg.url, cfg.options).addTo(map);
     currentBaseMapId = baseMapId in BASEMAP_OPTIONS ? baseMapId : 'gisco_positron';
     window.currentBaseMapId = currentBaseMapId;
     console.log(`🗺️ Basemap switched to: ${cfg.name}`);
