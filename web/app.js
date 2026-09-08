@@ -68,7 +68,51 @@ const map = L.map('map', {
 }).setView([45.0, 15.0], 4);
 
 // Basemap configuration + switcher
+// GISCO (Eurostat) OSM basemaps — free, no API key required, WebMercator (EPSG3857).
+// Replaced CARTO tiles (Aug 2026) after CARTO began requiring an API key + watermarking
+// unauthenticated raster requests. GISCO is an EU/Eurostat service, well-suited for this
+// Copernicus/JRC project.
+//
+// We use GISCO's tile (WMTS/TMS-style) endpoint, NOT the WMS GetMap endpoint.
+// The WMS GetMap output is watermarked (a "©NaturalEarth/©OpenStreetMap" banner is
+// burned across every image) since WMS is meant for preview, not production tiling.
+// The /tiles/ endpoint is clean. Its TileMatrixSet uses a top-left origin
+// (verified via WMTS Capabilities: TopLeftCorner 90 -180), i.e. it is XYZ-compatible,
+// so Leaflet's default {z}/{x}/{y} scheme lines up — no TMS Y-flip needed.
+const GISCO_ATTRIBUTION = '© <a href="https://ec.europa.eu/eurostat/web/gisco">Eurostat — GISCO</a> | © OpenStreetMap contributors';
+const GISCO_TILE = style => `https://gisco-services.ec.europa.eu/maps/tiles/${style}/EPSG3857/{z}/{x}/{y}.png`;
+
 const BASEMAP_OPTIONS = {
+    gisco_positron: {
+        name: 'GISCO Positron (light)',
+        url: GISCO_TILE('OSMPositronComposite'),
+        options: {
+            attribution: GISCO_ATTRIBUTION,
+            maxZoom: 18,
+            minZoom: 2,
+            pane: 'tilePane'
+        }
+    },
+    gisco_bright: {
+        name: 'GISCO Bright',
+        url: GISCO_TILE('OSMBrightComposite'),
+        options: {
+            attribution: GISCO_ATTRIBUTION,
+            maxZoom: 18,
+            minZoom: 2,
+            pane: 'tilePane'
+        }
+    },
+    gisco_dark: {
+        name: 'GISCO Dark Gray',
+        url: GISCO_TILE('OSMDarkGrayComposite'),
+        options: {
+            attribution: GISCO_ATTRIBUTION,
+            maxZoom: 18,
+            minZoom: 2,
+            pane: 'tilePane'
+        }
+    },
     esri_world_street: {
         name: 'Esri World Street (EN)',
         url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}',
@@ -79,34 +123,12 @@ const BASEMAP_OPTIONS = {
             pane: 'tilePane'
         }
     },
-    carto_dark: {
-        name: 'Carto Dark Matter',
-        url: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
-        options: {
-            attribution: '© <a href="https://carto.com/">CARTO</a> | © OpenStreetMap contributors',
-            subdomains: 'abcd',
-            maxZoom: 20,
-            minZoom: 2,
-            pane: 'tilePane'
-        }
-    },
     osm: {
         name: 'OpenStreetMap',
         url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
         options: {
             attribution: '© OpenStreetMap contributors',
             maxZoom: 19,
-            minZoom: 2,
-            pane: 'tilePane'
-        }
-    },
-    carto_voyager: {
-        name: 'Carto Voyager',
-        url: 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
-        options: {
-            attribution: '© <a href="https://carto.com/">CARTO</a> | © OpenStreetMap contributors',
-            subdomains: 'abcd',
-            maxZoom: 20,
             minZoom: 2,
             pane: 'tilePane'
         }
@@ -123,11 +145,11 @@ const BASEMAP_OPTIONS = {
     }
 };
 
-let currentBaseMapId = 'carto_voyager';
+let currentBaseMapId = 'gisco_positron';
 let baseLayer = null;
 
 function setBaseMap(baseMapId) {
-    const cfg = BASEMAP_OPTIONS[baseMapId] || BASEMAP_OPTIONS[currentBaseMapId] || BASEMAP_OPTIONS.carto_dark;
+    const cfg = BASEMAP_OPTIONS[baseMapId] || BASEMAP_OPTIONS[currentBaseMapId] || BASEMAP_OPTIONS.gisco_positron;
     if (!cfg) return;
 
     if (baseLayer && map.hasLayer(baseLayer)) {
@@ -135,7 +157,7 @@ function setBaseMap(baseMapId) {
     }
 
     baseLayer = L.tileLayer(cfg.url, cfg.options).addTo(map);
-    currentBaseMapId = baseMapId in BASEMAP_OPTIONS ? baseMapId : 'carto_dark';
+    currentBaseMapId = baseMapId in BASEMAP_OPTIONS ? baseMapId : 'gisco_positron';
     window.currentBaseMapId = currentBaseMapId;
     console.log(`🗺️ Basemap switched to: ${cfg.name}`);
 }
@@ -425,6 +447,34 @@ const layerMetadata = {
     'probability_twl_coast_01_15': { type: 'points', hasElevation: true, description: 'Coastal TWL probability (1-15D, with RP)' },
     'probability_twl_coast_01_03': { type: 'points', hasElevation: true, description: 'Coastal TWL probability (1-3D, with RP)' },
     'probability_twl_coast_04_15': { type: 'points', hasElevation: true, description: 'Coastal TWL probability (4-15D, with RP)' },
+
+    // Country choropleth layers
+    'country_epis_summary': { type: 'choropleth', hasElevation: false, hasTime: true, style: 'E_and_T:chloropleth_epis_summary', description: 'Country hazard — Episodic Water Level summary score (1–10)' },
+    'country_twl_summary': { type: 'choropleth', hasElevation: false, hasTime: true, style: 'E_and_T:twl_summary', description: 'Country hazard — Total Water Level summary score (1–10)' },
+
+    // Summary gridded layers (categorical 0-9, plasma_r)
+    'summary_twl_01_01': { type: 'summary', hasElevation: false, description: 'TWL exceedance summary (1d)' },
+    'summary_twl_01_03': { type: 'summary', hasElevation: false, description: 'TWL exceedance summary (1-3d)' },
+    'summary_twl_01_15': { type: 'summary', hasElevation: false, description: 'TWL exceedance summary (1-15d)' },
+    'summary_twl_04_15': { type: 'summary', hasElevation: false, description: 'TWL exceedance summary (4-15d)' },
+    'summary_twl_10_15': { type: 'summary', hasElevation: false, description: 'TWL exceedance summary (10-15d)' },
+    'summary_epis_01_01': { type: 'summary', hasElevation: false, description: 'Epis exceedance summary (1d)' },
+    'summary_epis_01_03': { type: 'summary', hasElevation: false, description: 'Epis exceedance summary (1-3d)' },
+    'summary_epis_01_15': { type: 'summary', hasElevation: false, description: 'Epis exceedance summary (1-15d)' },
+    'summary_epis_04_15': { type: 'summary', hasElevation: false, description: 'Epis exceedance summary (4-15d)' },
+    'summary_epis_10_15': { type: 'summary', hasElevation: false, description: 'Epis exceedance summary (10-15d)' },
+
+    // Summary coastal point layers (categorical 0-9, no RP dimension)
+    'summary_twl_coast_01_01': { type: 'summary', hasElevation: false, description: 'TWL coastal summary (1d)' },
+    'summary_twl_coast_01_03': { type: 'summary', hasElevation: false, description: 'TWL coastal summary (1-3d)' },
+    'summary_twl_coast_01_15': { type: 'summary', hasElevation: false, description: 'TWL coastal summary (1-15d)' },
+    'summary_twl_coast_04_15': { type: 'summary', hasElevation: false, description: 'TWL coastal summary (4-15d)' },
+    'summary_twl_coast_10_15': { type: 'summary', hasElevation: false, description: 'TWL coastal summary (10-15d)' },
+    'summary_epis_coast_01_01': { type: 'summary', hasElevation: false, description: 'Epis coastal summary (1d)' },
+    'summary_epis_coast_01_03': { type: 'summary', hasElevation: false, description: 'Epis coastal summary (1-3d)' },
+    'summary_epis_coast_01_15': { type: 'summary', hasElevation: false, description: 'Epis coastal summary (1-15d)' },
+    'summary_epis_coast_04_15': { type: 'summary', hasElevation: false, description: 'Epis coastal summary (4-15d)' },
+    'summary_epis_coast_10_15': { type: 'summary', hasElevation: false, description: 'Epis coastal summary (10-15d)' },
 
     // Video layers
     'epis_wl75': { type: 'video', hasElevation: true, description: 'Episode water level 75th percentile (with lead time)' },
@@ -1223,10 +1273,11 @@ async function preloadFrame(day, updateProgress = null, zoomLevel = null) {
         if (isGwcLayer) {
             wmsParams.tiled = true;
             wmsParams.version = '1.1.1';
-            wmsParams.SRS = 'EPSG:900913x2';
-            wmsParams.srs = 'EPSG:900913x2'; // GWC parser needs lowercase srs in v1.1.1
-            // FIX: Leaflet translates crs objects into srs/crs param depending on version.
-            // We must force the internal Leaflet CRS to EPSG3857 (which outputs as 900913x2 internally for v1.1.1)
+            // Use the real projection code (EPSG:900913). GWC matches the seeded
+            // "EPSG:900913x2" gridset by resolution/bbox. Passing the gridset NAME
+            // as SRS breaks GWC's integer CRS parser (400 "For input string 900913x2").
+            wmsParams.SRS = 'EPSG:900913';
+            wmsParams.srs = 'EPSG:900913';
         }
 
         // Direct GWC integration for video layers
@@ -1322,6 +1373,26 @@ async function preloadAllFrames(forceAllFrames = false) {
     const metadata = layerMetadata[currentParams.layer];
     if (!metadata || metadata.type !== 'video') {
         return false;
+    }
+
+    // Refuse to preload a timestep that has no granule — every one of the 16
+    // frames would 400 (GeoServer InvalidDimensionValue → GWC 400) and the
+    // animation loop would spin on cache misses. Exact date+hour check against the
+    // enumerated capabilities list, so it holds for every empty timestep. This is
+    // the single choke point for BOTH callers: the Play button (startAnimation,
+    // which treats a false return as "reset to Play") and autoPreloadVideoLayer
+    // (already gated upstream — this is a backstop).
+    if (window.wmsMetadata && window.wmsMetadata.loaded) {
+        const t = currentParams.time || '';
+        const dateStr = t.slice(0, 10);
+        const hourStr = t.slice(11, 13);
+        const fullDates = window.wmsMetadata.getFullDatesForLayer(currentParams.layer);
+        const availHours = window.wmsMetadata.getAvailableHoursForLayerDate(currentParams.layer, dateStr);
+        if (dateStr && fullDates.length > 0 && !(fullDates.includes(dateStr) && availHours.includes(hourStr))) {
+            console.log(`⏭️ [PRELOAD-ALL] No granule for ${t} — refusing to preload`);
+            if (typeof window.showNoDataOverlay === 'function') window.showNoDataOverlay();
+            return false;
+        }
     }
 
     console.log('📦 Preloading all animation frames (days 0-15) with parallel batching...');
@@ -1507,7 +1578,26 @@ window.autoPreloadVideoLayer = async function (layerId, _retryCount = 0) {
     const layerData = window.activeLayers && window.activeLayers.get(layerId);
     if (!layerData) return;
 
-    // Skip preload for dates not in readyDates — would cause 400s from GeoServer
+    // Skip preload for timesteps that have no granule at all — GeoServer answers
+    // these with InvalidDimensionValue, which GWC re-emits as a 400 for every tile
+    // in the 16-frame grid (the flood seen in the HAR). Checked at exact date+hour
+    // against the enumerated capabilities list, so it holds for EVERY empty
+    // timestep — whole-empty dates AND partial dates missing one of 00:00/12:00 —
+    // regardless of how the time was set (picker, share link, animation step).
+    if (window.wmsMetadata && window.wmsMetadata.loaded) {
+        const t = layerData.time || '';
+        const dateStr = t.slice(0, 10);
+        const hourStr = t.slice(11, 13);
+        const fullDates = window.wmsMetadata.getFullDatesForLayer(layerId);
+        const availHours = window.wmsMetadata.getAvailableHoursForLayerDate(layerId, dateStr);
+        if (dateStr && fullDates.length > 0 && !(fullDates.includes(dateStr) && availHours.includes(hourStr))) {
+            console.log(`⏭️ [PRELOAD] Skipping ${layerId} — no granule for ${t}`);
+            return; // base WMS still renders on-the-fly; overlay handled by tile load/error events
+        }
+    }
+
+    // Skip preload for dates not yet in readyDates — avoids preloading frames that
+    // aren't GWC+nginx warmed (slower, not an error). Complements the granule gate above.
     if (window.wmsMetadata && window.wmsMetadata.readyDates.size > 0) {
         const dateStr = (layerData.time || '').slice(0, 10);
         if (dateStr && !window.wmsMetadata.readyDates.has(dateStr)) {
@@ -1845,7 +1935,7 @@ function stopAnimation() {
                     // Videos enforce 1.0 opacity natively, but safeguard just in case
                     layerData.wmsLayer.setOpacity(1.0);
 
-                    if (window.map && !window.map.hasLayer(layerData.wmsLayer)) {
+                    if (window.map && !window.map.hasLayer(layerData.wmsLayer) && !layerData.hidden) {
                         layerData.wmsLayer.addTo(window.map);
                     }
 
@@ -2036,12 +2126,24 @@ let isSyncingTimeSelect = false;
 let isUserChangingDate = false;
 
 function getCurrentLayerIdForGlobalTime() {
-    if (window.currentParams && window.currentParams.layer) return window.currentParams.layer;
-    if (window.activeLayers && window.activeLayers.size > 0) {
-        const first = window.activeLayers.keys().next();
-        if (!first.done) return first.value;
+    // Choropleth (Country Hazard) layers have weekly-only dates and must NEVER
+    // drive the global date picker. If the selected date has no hazard data,
+    // syncChoroplethToGlobalDate() shows "No data available" in the layer's
+    // panel instead — the calendar stays fully open.
+    const isChoropleth = (id) => layerMetadata[id] && layerMetadata[id].type === 'choropleth';
+
+    if (window.currentParams && window.currentParams.layer && !isChoropleth(window.currentParams.layer)) {
+        return window.currentParams.layer;
     }
-    return null;
+    if (window.activeLayers && window.activeLayers.size > 0) {
+        for (const [layerId, layerData] of window.activeLayers.entries()) {
+            if (layerData.metadata && layerData.metadata.type === 'choropleth') continue;
+            return layerId;
+        }
+    }
+    // Only choropleth layers active — bound the picker by the primary video
+    // dataset (daily dates) rather than the hazard layer's weekly dates.
+    return Object.keys(layerMetadata).find(id => layerMetadata[id].type === 'video') || null;
 }
 
 function findClosestDate(targetDateStr, availableDates) {
@@ -2062,6 +2164,14 @@ function findClosestDate(targetDateStr, availableDates) {
 
 function updateGlobalDateControlsForLayer(layerId, reason = '') {
     if (!window.wmsMetadata || !window.wmsMetadata.loaded || !layerId) return;
+
+    // Country Hazard (choropleth) layers must never constrain the calendar —
+    // re-resolve to a video layer's daily dates (see getCurrentLayerIdForGlobalTime).
+    if (layerMetadata[layerId] && layerMetadata[layerId].type === 'choropleth') {
+        layerId = getCurrentLayerIdForGlobalTime();
+        if (!layerId || (layerMetadata[layerId] && layerMetadata[layerId].type === 'choropleth')) return;
+    }
+
     const dates = window.wmsMetadata.getAvailableDatesForLayer(layerId);
     if (!dates || dates.length === 0) return;
 
@@ -2086,8 +2196,13 @@ function updateGlobalDateControlsForLayer(layerId, reason = '') {
 
     const hours = ['00', '12'];
 
-    // For dates in readyDates: check actual available hours.
-    // For dates in range but not in readyDates: default to both hours.
+    // Do NOT snap the hour away from empty timesteps. The user must be able to
+    // navigate onto an empty date/hour (arrows or hour buttons) and get a clean
+    // "No data available" banner with zero tile loads — that no-data state is
+    // produced downstream (refreshLayerTiles / preload / play gates check the exact
+    // granule). Snapping here would silently redirect to a valid neighbour and the
+    // banner would never show. Both hours stay selectable; only the last-date
+    // beyond-range hour is trimmed.
     let availableHours = hours;
     if (dates.includes(nextDate)) {
         const rawAvailableHours = window.wmsMetadata.getAvailableHoursForLayerDate(layerId, nextDate);
@@ -2283,6 +2398,24 @@ function syncSplitDateToProxy() {
 document.getElementById('date-select').addEventListener('change', syncSplitDateToProxy);
 document.getElementById('hour-select').addEventListener('change', syncSplitDateToProxy);
 
+// Refuse stepping forward past the layer's LAST real granule. Empty timesteps
+// *inside* the enumerated range stay navigable on purpose (they render the clean
+// "No data available" banner — see caf46c7). This only blocks times strictly after
+// the final granule — e.g. 12:00 on the last date when only 00:00 was downloaded —
+// so the picker can't land on a phantom step that shows stale/incorrect tiles.
+function isBeyondLatestGranule(dateStr, hourStr) {
+    if (!dateStr || !hourStr) return false;
+    if (!window.wmsMetadata || !window.wmsMetadata.loaded) return false;
+    const layerId = getCurrentLayerIdForGlobalTime();
+    if (!layerId) return false;
+    const latestIso = window.wmsMetadata.getLatestTimeForLayer(layerId);
+    if (!latestIso) return false;
+    const latest = new Date(latestIso);
+    const target = new Date(`${dateStr}T${hourStr}:00:00.000Z`);
+    if (isNaN(latest.getTime()) || isNaN(target.getTime())) return false;
+    return target.getTime() > latest.getTime();
+}
+
 // Stepper logic for Date/Time navigation — half-day steps (00:00 ↔ 12:00)
 document.getElementById('date-prev').addEventListener('click', () => {
     const ds = document.getElementById('date-select');
@@ -2304,6 +2437,7 @@ document.getElementById('date-next').addEventListener('click', () => {
     const hs = document.getElementById('hour-select');
     if (!ds || !ds.value || !hs) return;
     if (hs.value === '00') {
+        if (isBeyondLatestGranule(ds.value, '12')) return; // no 12:00 granule on the last date
         setHour('12');
     } else {
         if (ds.max && ds.value >= ds.max) return; // already at max date
@@ -2326,7 +2460,13 @@ function setHour(h) {
 }
 
 document.querySelectorAll('.hour-toggle-btn').forEach(btn => {
-    btn.addEventListener('click', () => setHour(btn.dataset.hour));
+    btn.addEventListener('click', () => {
+        const ds = document.getElementById('date-select');
+        // Block a direct jump to a phantom step past the last granule (e.g. 12:00
+        // on the final date when only 00:00 exists). Mid-range empty steps are fine.
+        if (ds && ds.value && isBeyondLatestGranule(ds.value, btn.dataset.hour)) return;
+        setHour(btn.dataset.hour);
+    });
 });
 
 // Keyboard arrow navigation: ← → = half-day, Shift+← Shift+→ = full day
@@ -2349,7 +2489,10 @@ document.addEventListener('keydown', (e) => {
         ds.value = next;
         syncSplitDateToProxy();
     } else {
-        if (dir === 1 && hs.value === '00') { setHour('12'); }
+        if (dir === 1 && hs.value === '00') {
+            if (isBeyondLatestGranule(ds.value, '12')) return; // no 12:00 granule on the last date
+            setHour('12');
+        }
         else if (dir === 1 && hs.value === '12') {
             if (ds.max && ds.value >= ds.max) return;
             const d = new Date(ds.value);
@@ -2777,7 +2920,19 @@ async function queryLayer(layerId, layerData, latlng, point, size, signal) {
 // Add click handler to map
 map.on('click', function (e) {
     console.log('🖱️ Map clicked at:', e.latlng);
-    getFeatureInfo(e.latlng);
+    // Wait for country-info module to determine if click is on land.
+    // yield one microtask so country-info handler (registered later) sets its promise first.
+    (async () => {
+        await Promise.resolve(); // yield to let country handler set _countryCheckPromise
+        if (window._countryCheckPromise) {
+            const isLand = await window._countryCheckPromise;
+            if (isLand) {
+                console.log('ℹ️ Click on land — skipping raster GetFeatureInfo popup');
+                return;
+            }
+        }
+        getFeatureInfo(e.latlng);
+    })();
 });
 
 // Global command to print performance summary (type in console: printPerformanceSummary())
@@ -2822,7 +2977,12 @@ function applyDateRangeFromMetadata() {
     }
 
     // 2. Set currentParams.time to latest available date
-    const latestTime = maxDate.toISOString();
+    //    (or the shared date from a permalink, if present)
+    let latestTime = maxDate.toISOString();
+    if (window._sharedState && window._sharedState.t) {
+        latestTime = window._sharedState.t + ':00.000Z';
+        console.log(`🔗 Using shared date from link: ${latestTime}`);
+    }
     if (window.currentParams) {
         window.currentParams.time = latestTime;
     }

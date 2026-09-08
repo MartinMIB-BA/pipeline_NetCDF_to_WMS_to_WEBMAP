@@ -143,5 +143,29 @@
     ],
     "probability_twl_coast_04_15": [
         "probabilityTWLcoast_04_15"
-    ]
+    ],
+
+    "summary_twl_01_01": ["summaryTWL_01_01"],
+    "summary_twl_01_03": ["summaryTWL_01_03"],
+    "summary_twl_01_15": ["summaryTWL_01_15"],
+    "summary_twl_04_15": ["summaryTWL_04_15"],
+    "summary_twl_10_15": ["summaryTWL_10_15"],
+
+    "summary_epis_01_01": ["summaryEpis_01_01"],
+    "summary_epis_01_03": ["summaryEpis_01_03"],
+    "summary_epis_01_15": ["summaryEpis_01_15"],
+    "summary_epis_04_15": ["summaryEpis_04_15"],
+    "summary_epis_10_15": ["summaryEpis_10_15"],
+
+    "summary_twl_coast_01_01": ["summaryTWLcoast_01_01"],
+    "summary_twl_coast_01_03": ["summaryTWLcoast_01_03"],
+    "summary_twl_coast_01_15": ["summaryTWLcoast_01_15"],
+    "summary_twl_coast_04_15": ["summaryTWLcoast_04_15"],
+    "summary_twl_coast_10_15": ["summaryTWLcoast_10_15"],
+
+    "summary_epis_coast_01_01": ["summaryEpiscoast_01_01"],
+    "summary_epis_coast_01_03": ["summaryEpiscoast_01_03"],
+    "summary_epis_coast_01_15": ["summaryEpiscoast_01_15"],
+    "summary_epis_coast_04_15": ["summaryEpiscoast_04_15"],
+    "summary_epis_coast_10_15": ["summaryEpiscoast_10_15"]
 }

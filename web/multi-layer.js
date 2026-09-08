@@ -50,6 +50,31 @@ const layerDisplayNames = {
     'probability_twl_coast_01_15': 'Coastal TWL (1-15D)',
     'probability_twl_coast_01_03': 'Coastal TWL (1-3D)',
     'probability_twl_coast_04_15': 'Coastal TWL (4-15D)',
+    // Country choropleth layers
+    'country_epis_summary': 'Episodic Water Level Summary',
+    'country_twl_summary': 'Total Water Level Summary',
+    // Summary layers (gridded)
+    'summary_twl_01_01': 'Summary TWL (1d)',
+    'summary_twl_01_03': 'Summary TWL (1-3d)',
+    'summary_twl_01_15': 'Summary TWL (1-15d)',
+    'summary_twl_04_15': 'Summary TWL (4-15d)',
+    'summary_twl_10_15': 'Summary TWL (10-15d)',
+    'summary_epis_01_01': 'Summary Epis (1d)',
+    'summary_epis_01_03': 'Summary Epis (1-3d)',
+    'summary_epis_01_15': 'Summary Epis (1-15d)',
+    'summary_epis_04_15': 'Summary Epis (4-15d)',
+    'summary_epis_10_15': 'Summary Epis (10-15d)',
+    // Summary layers (coastal)
+    'summary_twl_coast_01_01': 'Summary TWL Coast (1d)',
+    'summary_twl_coast_01_03': 'Summary TWL Coast (1-3d)',
+    'summary_twl_coast_01_15': 'Summary TWL Coast (1-15d)',
+    'summary_twl_coast_04_15': 'Summary TWL Coast (4-15d)',
+    'summary_twl_coast_10_15': 'Summary TWL Coast (10-15d)',
+    'summary_epis_coast_01_01': 'Summary Epis Coast (1d)',
+    'summary_epis_coast_01_03': 'Summary Epis Coast (1-3d)',
+    'summary_epis_coast_01_15': 'Summary Epis Coast (1-15d)',
+    'summary_epis_coast_04_15': 'Summary Epis Coast (4-15d)',
+    'summary_epis_coast_10_15': 'Summary Epis Coast (10-15d)',
     // Video layers
     'epis_wl75': 'Episode WL 75',
 
@@ -74,6 +99,8 @@ const LAYER_BUBBLE_CATEGORIES = [
     { key: 'about', label: 'ABOUT', icon: 'fa-circle-info', type: 'about' },
     { key: 'static', label: 'RETURN PERIODS', icon: 'fa-layer-group', type: 'static' },
     { key: 'coastal', label: 'COASTAL POINTS', icon: 'fa-location-dot', type: 'points' },
+    { key: 'summary', label: 'SUMMARY', icon: 'fa-chart-simple', type: 'summary' },
+    { key: 'choropleth', label: 'COUNTRY HAZARD', icon: 'fa-earth-europe', type: 'choropleth' },
     { key: 'video', label: 'FORECAST', icon: 'fa-film', type: 'video' },
     { key: 'glofas', label: 'GloFAS', icon: 'fa-water', type: 'glofas' }
 ];
@@ -147,6 +174,15 @@ function initializeLayerList() {
         '📍 COASTAL POINTS': [
             'probability_epis_coast_01_15', 'probability_epis_coast_01_03', 'probability_epis_coast_04_15',
             'probability_twl_coast_01_15', 'probability_twl_coast_01_03', 'probability_twl_coast_04_15'
+        ],
+        '🗺️ COUNTRY HAZARD': [
+            'country_epis_summary', 'country_twl_summary'
+        ],
+        '📊 SUMMARY': [
+            'summary_twl_01_01', 'summary_twl_01_03', 'summary_twl_01_15', 'summary_twl_04_15', 'summary_twl_10_15',
+            'summary_epis_01_01', 'summary_epis_01_03', 'summary_epis_01_15', 'summary_epis_04_15', 'summary_epis_10_15',
+            'summary_twl_coast_01_01', 'summary_twl_coast_01_03', 'summary_twl_coast_01_15', 'summary_twl_coast_04_15', 'summary_twl_coast_10_15',
+            'summary_epis_coast_01_01', 'summary_epis_coast_01_03', 'summary_epis_coast_01_15', 'summary_epis_coast_04_15', 'summary_epis_coast_10_15'
         ],
         '🎥 FORECAST': [
             'epis_wl75', 'twl75'
@@ -432,7 +468,7 @@ function generateLayerControls(layerId) {
     let html = '';
 
     // Time control (ONLY for non-static layers like video and points)
-    if (metadata.type !== 'static' && metadata.type !== 'glofas') {
+    if (metadata.type !== 'static' && metadata.type !== 'glofas' && metadata.type !== 'choropleth') {
         // For forecast-style layers (video + coastal points), show dynamic forecast date label
         if (hasForecastDateLabel(metadata)) {
             html += `
@@ -467,6 +503,16 @@ function generateLayerControls(layerId) {
                     <input type="range" id="elevation-${layerId}" min="0" max="${maxValue}" value="0" step="1" class="layer-elevation-input">
                     <span class="layer-control-value" id="elevation-value-${layerId}">0</span>
                 </div>
+            </div>
+        `;
+    }
+
+    // Forecast week label for choropleth layers with TIME (follows global date)
+    if (metadata.type === 'choropleth' && metadata.hasTime) {
+        html += `
+            <div class="layer-control">
+                <label class="layer-control-label"><i class="fa-solid fa-calendar-week"></i> Forecast Week</label>
+                <div id="week-label-${layerId}" style="font-size: 11px; font-weight: 600; color: var(--primary-color); background: var(--bg-dark); border: 1px solid var(--border-color); border-radius: 6px; padding: 5px 8px; text-align: center;">--.--.---- – --.--. ----</div>
             </div>
         `;
     }
@@ -729,6 +775,17 @@ function addLayer(layerId) {
             : null;
     }
 
+    // Choropleth layers (vector SQL Views) have NO time dimension UNLESS hasTime is set
+    if (metadata && metadata.type === 'choropleth' && !metadata.hasTime) {
+        initialTime = null;
+    }
+
+    // Choropleth layers WITH time: let GeoServer use default (latest week)
+    // Don't send TIME on initial load — GeoServer's "Use biggest domain value" handles it
+    if (metadata && metadata.type === 'choropleth' && metadata.hasTime) {
+        initialTime = null;
+    }
+
     let initialElevation = 0;
     const isVideo = metadata && metadata.type === 'video';
 
@@ -827,14 +884,19 @@ function addLayer(layerId) {
         ...(isGlofas ? (glofasTime ? { time: glofasTime } : {}) : {
             ...(params.time ? { time: params.time } : {}),
             ...(metadata.hasElevation ? { elevation: params.elevation } : {})
-        })
+        }),
+        // Choropleth layers need explicit style (GeoServer default may be generic 'polygon')
+        ...(metadata.type === 'choropleth' && metadata.style ? { styles: metadata.style } : {})
     };
 
     if (isGwcLayer) {
         wmsParams.tiled = true;
         wmsParams.version = '1.1.1';
-        wmsParams.SRS = 'EPSG:900913x2';
-        wmsParams.srs = 'EPSG:900913x2'; // GWC parser needs lowercase srs in v1.1.1
+        // Use the real projection code (EPSG:900913). GWC matches the seeded
+        // "EPSG:900913x2" gridset by resolution/bbox. Passing the gridset NAME
+        // as SRS breaks GWC's integer CRS parser (400 "For input string 900913x2").
+        wmsParams.SRS = 'EPSG:900913';
+        wmsParams.srs = 'EPSG:900913';
     }
 
     // Use external WMS URL for GloFAS layers, GWC for video, GeoServer WMS otherwise
@@ -887,7 +949,9 @@ function addLayer(layerId) {
     });
 
     // All tiles finished — if every tile failed, mark this layer as no-data
+    // (Choropleth layers are excluded — they always have data from PostGIS join)
     wmsLayer.on('load', function () {
+        if (metadata && metadata.type === 'choropleth') return; // skip no-data tracking
         if (tileSuccessCount === 0 && tileErrorCount > 0) {
             _layersWithNoData.add(layerId);
         } else {
@@ -1284,6 +1348,93 @@ function setLayerVisibility(layerId, visible) {
 
 const initializedControls = new Set();
 
+/**
+ * Sync all choropleth layers to the correct forecast week for the current global date.
+ * Finds the forecast_date that covers the selected date (closest <= selected date).
+ * Updates tiles + week label.
+ */
+function syncChoroplethToGlobalDate() {
+    const timeSelect = document.getElementById('time-select');
+    if (!timeSelect || !timeSelect.value) return;
+
+    const selectedDate = new Date(timeSelect.value + ':00.000Z');
+
+    activeLayers.forEach((layerData, layerId) => {
+        if (!layerData.metadata || layerData.metadata.type !== 'choropleth' || !layerData.metadata.hasTime) return;
+
+        const weeks = (window._choroplethWeeks && window._choroplethWeeks[layerId]) || [];
+        const weekLabel = document.getElementById(`week-label-${layerId}`);
+
+        // The global calendar is never constrained by hazard layers — instead,
+        // any selected date without a covering forecast week gets this
+        // "no data" treatment: message in the layer panel + tiles hidden.
+        const showNoData = () => {
+            if (weekLabel) {
+                weekLabel.textContent = 'No data available — Country Hazard';
+                weekLabel.style.color = 'var(--warning-color)';
+            }
+            if (layerData.wmsLayer && window.map && window.map.hasLayer(layerData.wmsLayer)) {
+                window.map.removeLayer(layerData.wmsLayer);
+            }
+            layerData.time = null;
+        };
+
+        if (weeks.length === 0) {
+            showNoData();
+            return;
+        }
+
+        // Selected date before the earliest available forecast week → no data
+        const earliestWeek = new Date(weeks[0]);
+        if (selectedDate < earliestWeek) {
+            showNoData();
+            return;
+        }
+
+        // Find the forecast week that contains the selected date
+        // (largest forecast_date that is <= selected date)
+        let matchedWeek = weeks[0];
+        for (const w of weeks) {
+            const wDate = new Date(w);
+            if (wDate <= selectedDate) {
+                matchedWeek = w;
+            } else {
+                break;
+            }
+        }
+
+        // A forecast week covers [forecast_date, forecast_date + 6 days].
+        // If the selected date falls past that window (beyond the newest week,
+        // or into a gap left by a missed weekly ingest), there is no hazard
+        // data for it — say so instead of silently showing an older week.
+        const coverageEnd = new Date(matchedWeek);
+        coverageEnd.setUTCDate(coverageEnd.getUTCDate() + 7);   // exclusive end
+        if (selectedDate >= coverageEnd) {
+            showNoData();
+            return;
+        }
+
+        // Restore layer if it was hidden
+        if (layerData.wmsLayer && window.map && !window.map.hasLayer(layerData.wmsLayer) && !layerData.hidden) {
+            layerData.wmsLayer.addTo(window.map);
+        }
+
+        // Update tiles
+        refreshLayerTiles(layerId, layerData, { time: matchedWeek });
+
+        // Update week label (show range: forecast_date to forecast_date + 6 days)
+        if (weekLabel) {
+            const start = new Date(matchedWeek);
+            const end = new Date(start);
+            end.setUTCDate(end.getUTCDate() + 6);
+            const fmt = (d) => `${String(d.getUTCDate()).padStart(2,'0')}.${String(d.getUTCMonth()+1).padStart(2,'0')}`;
+            weekLabel.textContent = `${fmt(start)} – ${fmt(end)}.${end.getUTCFullYear()}`;
+            weekLabel.style.color = 'var(--primary-color)';
+        }
+    });
+}
+window.syncChoroplethToGlobalDate = syncChoroplethToGlobalDate;
+
 // Attach control listeners for a specific layer
 function attachLayerControlListeners(layerId) {
     if (initializedControls.has(layerId)) return;
@@ -1398,6 +1549,42 @@ function attachLayerControlListeners(layerId) {
             debouncedIndividualElevationUpdate(layerId, newVal);
         });
     }
+
+    // Choropleth week sync: fetch available weeks, find correct one for global date
+    const weekLabel = document.getElementById(`week-label-${layerId}`);
+    if (weekLabel && layerMetadata[layerId] && layerMetadata[layerId].type === 'choropleth' && layerMetadata[layerId].hasTime) {
+        // Fetch available forecast dates from GetCapabilities
+        const fetchAvailableWeeks = async () => {
+            try {
+                const resp = await fetch(`${GEOSERVER_URL}/wms?service=WMS&version=1.3.0&request=GetCapabilities`);
+                const text = await resp.text();
+                const parser = new DOMParser();
+                const xml = parser.parseFromString(text, 'text/xml');
+                const layers = xml.querySelectorAll('Layer > Layer');
+                for (const layer of layers) {
+                    const name = layer.querySelector('Name');
+                    if (name && name.textContent === `E_and_T:${layerId}`) {
+                        const dim = layer.querySelector('Dimension[name="time"]');
+                        if (dim) {
+                            return dim.textContent.trim().split(',').map(d => d.trim()).sort();
+                        }
+                    }
+                }
+            } catch (e) { console.warn('Could not fetch time dimension:', e); }
+            return [];
+        };
+
+        // Store available weeks globally for this layer
+        if (!window._choroplethWeeks) window._choroplethWeeks = {};
+
+        fetchAvailableWeeks().then(weeks => {
+            window._choroplethWeeks[layerId] = weeks;
+            // Trigger initial sync with current global date
+            syncChoroplethToGlobalDate();
+        });
+    }
+
+    // Opacity control (ONLY for non-video layers)
 
     // Opacity control (ONLY for non-video layers)
     const opacityInput = document.getElementById(`opacity-${layerId}`);
@@ -1578,6 +1765,11 @@ function checkAllLayersAvailability() {
 
     const checks = [];
     for (const [layerId, layerData] of activeLayers.entries()) {
+        // Skip choropleth layers — they always have data (PostGIS join, not raster)
+        if (layerData.metadata && layerData.metadata.type === 'choropleth') {
+            checks.push(true);
+            continue;
+        }
         const result = checkLayerDataAvailability(layerId, layerData.time, layerData.elevation);
         checks.push(result);
     }
@@ -1625,6 +1817,8 @@ document.addEventListener('DOMContentLoaded', function () {
         // 50ms is enough to collapse same-tick duplicates without blocking rapid arrow navigation
         const debouncedTimeRefresh = debounce((newTime, rawValue) => {
             activeLayers.forEach((layerData, layerId) => {
+                // Choropleth layers are synced separately via syncChoroplethToGlobalDate
+                if (layerData.metadata && layerData.metadata.type === 'choropleth') return;
                 refreshLayerTiles(layerId, layerData, { time: newTime });
                 const individualInput = document.getElementById(`time-${layerId}`);
                 if (individualInput) individualInput.value = rawValue;
@@ -1640,6 +1834,9 @@ document.addEventListener('DOMContentLoaded', function () {
 
             // Immediate state updates (no debounce — needed for cache clear and UI labels)
             activeLayers.forEach((layerData, layerId) => {
+                // Choropleth layers manage their own time via syncChoroplethToGlobalDate
+                if (layerData.metadata && layerData.metadata.type === 'choropleth') return;
+
                 layerData.time = newTime;
 
                 if (window.isAnimating && window.currentParams && window.currentParams.layer === layerId) {
@@ -1660,6 +1857,9 @@ document.addEventListener('DOMContentLoaded', function () {
 
             // Debounced: tile refresh and input sync (prevents double-fire with app.js updateWMSParams)
             debouncedTimeRefresh(newTime, rawValue);
+
+            // Sync choropleth layers to the correct forecast week
+            syncChoroplethToGlobalDate();
         });
     }
 
@@ -1742,11 +1942,16 @@ document.addEventListener('DOMContentLoaded', function () {
             // e.g., video layers have 12:00Z times but static layers only have 00:00Z times.
             if (window.wmsMetadata && window.wmsMetadata.loaded) {
                 // Try layer-specific time first, fall back to global max
-                const latestISO = window.wmsMetadata.getLatestTimeForLayer(defaultLayerId)
+                let latestISO = window.wmsMetadata.getLatestTimeForLayer(defaultLayerId)
                     || window.wmsMetadata.getTimeExtent().maxDate?.toISOString();
 
+                // Shared permalink date takes priority
+                if (window._sharedState && window._sharedState.t) {
+                    latestISO = window._sharedState.t + ':00.000Z';
+                }
+
                 if (latestISO) {
-                    console.log(`✅ Metadata loaded. Layer-specific latest time: ${latestISO}`);
+                    console.log(`✅ Metadata loaded. Initial time: ${latestISO}`);
 
                     // Update the global time input so addLayer() picks up the right value
                     const timeInput = document.getElementById('time-select');
@@ -1758,17 +1963,38 @@ document.addEventListener('DOMContentLoaded', function () {
                 }
             }
 
-            // Auto-initialize GloFAS reporting points first so twl75 ends up on top of the panel
-            const reportingPointsCheckbox = document.getElementById('checkbox-reportingPoints');
-            if (reportingPointsCheckbox && !reportingPointsCheckbox.checked) {
-                console.log('🚀 Auto-initializing default layer: reportingPoints');
-                reportingPointsCheckbox.click();
-            }
+            // Auto-initialize layers: shared permalink layers take priority over defaults
+            const sharedLayers = (window._sharedState && window._sharedState.layers)
+                ? window._sharedState.layers.split(',').filter(Boolean)
+                : null;
 
-            // Now trigger the default layer load (it reads the time-select we just set)
-            if (defaultCheckbox && !defaultCheckbox.checked) {
-                console.log(`🚀 Auto-initializing default layer: ${defaultLayerId}`);
-                defaultCheckbox.click(); // Trigger native event pipeline
+            if (sharedLayers) {
+                console.log('🔗 Loading shared layers from link:', sharedLayers);
+                sharedLayers.forEach(layerId => {
+                    const cb = document.getElementById(`checkbox-${layerId}`);
+                    if (cb && !cb.checked) cb.click();
+                });
+            } else {
+                // Default layers (bottom to top order):
+                // 1. Country Risk choropleth (base context layer)
+                const choroplethCheckbox = document.getElementById('checkbox-country_twl_summary');
+                if (choroplethCheckbox && !choroplethCheckbox.checked) {
+                    console.log('🚀 Auto-initializing default layer: country_twl_summary');
+                    choroplethCheckbox.click();
+                }
+
+                // 2. GloFAS reporting points
+                const reportingPointsCheckbox = document.getElementById('checkbox-reportingPoints');
+                if (reportingPointsCheckbox && !reportingPointsCheckbox.checked) {
+                    console.log('🚀 Auto-initializing default layer: reportingPoints');
+                    reportingPointsCheckbox.click();
+                }
+
+                // 3. TWL75 forecast (on top)
+                if (defaultCheckbox && !defaultCheckbox.checked) {
+                    console.log(`🚀 Auto-initializing default layer: ${defaultLayerId}`);
+                    defaultCheckbox.click();
+                }
             }
         }).catch(err => {
             // Fallback: init anyway even if metadata fails
@@ -1816,6 +2042,34 @@ function refreshLayerTiles(layerId, layerData, newParams = {}) {
     // Merge new values into layerData
     if (newParams.time !== undefined) layerData.time = newParams.time;
     if (newParams.elevation !== undefined) layerData.elevation = newParams.elevation;
+
+    // Empty-timestep guard for video layers (twl75/epis_wl75). If the selected time
+    // has no granule, show the "No data available" banner straight from metadata and
+    // fire ZERO tiles. Previously the banner only appeared AFTER the base layer's
+    // tiles 400'd — i.e. after loading; this makes it proactive and load-free. Stale
+    // tiles are hidden (opacity 0, no network) so the map blanks like it did before,
+    // and the exact prior opacity is captured for restore. The user can still
+    // navigate onto empty timesteps (e.g. the half-day arrows) and gets a clean
+    // no-data state instead of a flood of 400s.
+    if (['twl75', 'epis_wl75'].includes(layerId) && window.wmsMetadata && window.wmsMetadata.loaded) {
+        if (!window.wmsMetadata.isDataAvailable(layerId, layerData.time)) {
+            console.log(`🛑 [WMS UPDATE] ${layerId} @ ${layerData.time} — no granule, showing no-data, skipping tile load`);
+            if (layerData.wmsLayer) {
+                if (layerData._opacityBeforeEmpty == null) layerData._opacityBeforeEmpty = layerData.wmsLayer.options.opacity;
+                layerData.wmsLayer.setOpacity(0);
+            }
+            _layersWithNoData.add(layerId);
+            _updateNoDataOverlay();
+            return;
+        }
+        // Valid timestep — restore visibility if we blanked it, and clear no-data state
+        // (the tile 'loading' event clears it too, but do it explicitly for immediacy).
+        if (layerData._opacityBeforeEmpty != null && layerData.wmsLayer) {
+            layerData.wmsLayer.setOpacity(layerData._opacityBeforeEmpty);
+            layerData._opacityBeforeEmpty = null;
+        }
+        if (_layersWithNoData.has(layerId)) { _layersWithNoData.delete(layerId); _updateNoDataOverlay(); }
+    }
 
     // Standard WMS: update only what changed
     const wmsUpdate = {};

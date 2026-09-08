@@ -1562,10 +1562,11 @@
                     <div style="margin-top: 6px;">
                         <label for="basemap-select"><i class="fa-solid fa-map"></i> Background Map</label>
                         <select id="basemap-select">
+                            <option value="gisco_positron">GISCO Positron (light)</option>
+                            <option value="gisco_bright">GISCO Bright</option>
+                            <option value="gisco_dark">GISCO Dark Gray</option>
                             <option value="esri_world_street">Esri World Street (EN)</option>
-                            <option value="carto_dark">Carto Dark Matter</option>
                             <option value="osm">OpenStreetMap</option>
-                            <option value="carto_voyager">Carto Voyager</option>
                             <option value="esri_satellite">Esri Satellite</option>
                         </select>
                     </div>
@@ -1582,10 +1583,12 @@
 
         <!-- Leaflet JS -->
         <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+        <script src="share.js?v=1"></script>
         <script src="wms-metadata.js?v=31"></script>
         <script src="app.js?v=31"></script>
         <script src="multi-layer.js?v=31"></script>
         <script src="ui-interactions.js?v=31"></script>
+        <script src="country-info.js?v=1"></script>
 
         <!-- Restore buttons (hidden by default) -->
         <button id="restore-bottom-panel"

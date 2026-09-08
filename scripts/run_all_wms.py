@@ -174,6 +174,7 @@ def main():
         ("static_wms", "workers.static_wms"),
         ("video_wms", "workers.video_wms"),
         ("points_wms", "workers.points_wms"),
+        ("summary_points_wms", "workers.summary_points_wms"),
     ]
     
     # Process each file through entire pipeline

@@ -285,11 +285,21 @@ class WMSMetadata {
             return true;
         }
 
-        // VIDEO LAYERS: Skip time matching - GWC serves these with different
-        // time formats and the server will return nearest available frame anyway
+        // VIDEO LAYERS: validate the exact granule (date + hour). The old code
+        // returned true unconditionally, assuming GeoServer nearest-matches — it
+        // does NOT; a missing timestep yields InvalidDimensionValue, which GWC
+        // re-emits as a 400 for every tile. Exact match (no loose date-prefix
+        // fallback) so a partial date where only one of 00:00/12:00 exists is
+        // correctly reported unavailable. Relies on the enumerated time list
+        // (time dimension published as "list", not "interval and resolution").
         const videoLayers = ['epis_wl75', 'twl75'];
         if (videoLayers.includes(layerId)) {
-            return true;
+            const vLayerData = this.layers.get(layerId);
+            if (!vLayerData || vLayerData.times.size === 0 || !time) return true;
+            const idx = this.buildTimeIndexForLayer(layerId);
+            if (!idx) return true;
+            const availHours = idx.dateToHours.get(time.slice(0, 10));
+            return !!availHours && availHours.has(time.slice(11, 13));
         }
 
         const layerData = this.layers.get(layerId);
