@@ -25,7 +25,7 @@ Interactive Leaflet-based map viewer for exploring GeoServer WMS layers. CORS is
 - **Time slider** — step through TIME dimension of video/time-series layers
 - **Elevation selector** — select ELEVATION dimension for point layers
 - **Multi-layer mode** — display several layers simultaneously with opacity controls
-- **Basemap switcher** — Esri World Imagery, CartoDB Light, OpenStreetMap
+- **Basemap switcher** — GISCO Positron/Bright/Dark (Eurostat, no API key), Esri World Imagery/Street, OpenStreetMap
 - **Server protection** — limits the number of concurrent browser tabs to prevent GeoServer overload (enforced via `localStorage`)
 - **WMS metadata panel** — shows layer name, bounding box, available times, and CRS
 

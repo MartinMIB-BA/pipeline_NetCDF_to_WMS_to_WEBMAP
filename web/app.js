@@ -68,7 +68,44 @@ const map = L.map('map', {
 }).setView([45.0, 15.0], 4);
 
 // Basemap configuration + switcher
+// GISCO (Eurostat) OSM basemaps — free, no API key required, WebMercator (EPSG3857).
+// Replaced CARTO tiles (Aug 2026) after CARTO began requiring an API key + watermarking
+// unauthenticated raster requests. GISCO is an EU/Eurostat service, well-suited for this
+// Copernicus/JRC project. Style names come from the GISCO MapProxy tile service.
+const GISCO_ATTRIBUTION = '© <a href="https://ec.europa.eu/eurostat/web/gisco">Eurostat — GISCO</a> | © OpenStreetMap contributors';
+const GISCO_TILE = style => `https://gisco-services.ec.europa.eu/maps/tiles/${style}/EPSG3857/{z}/{x}/{y}.png`;
+
 const BASEMAP_OPTIONS = {
+    gisco_positron: {
+        name: 'GISCO Positron (light)',
+        url: GISCO_TILE('OSMPositronComposite'),
+        options: {
+            attribution: GISCO_ATTRIBUTION,
+            maxZoom: 18,
+            minZoom: 2,
+            pane: 'tilePane'
+        }
+    },
+    gisco_bright: {
+        name: 'GISCO Bright',
+        url: GISCO_TILE('OSMBrightComposite'),
+        options: {
+            attribution: GISCO_ATTRIBUTION,
+            maxZoom: 18,
+            minZoom: 2,
+            pane: 'tilePane'
+        }
+    },
+    gisco_dark: {
+        name: 'GISCO Dark Gray',
+        url: GISCO_TILE('OSMDarkGrayComposite'),
+        options: {
+            attribution: GISCO_ATTRIBUTION,
+            maxZoom: 18,
+            minZoom: 2,
+            pane: 'tilePane'
+        }
+    },
     esri_world_street: {
         name: 'Esri World Street (EN)',
         url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}',
@@ -79,34 +116,12 @@ const BASEMAP_OPTIONS = {
             pane: 'tilePane'
         }
     },
-    carto_dark: {
-        name: 'Carto Dark Matter',
-        url: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
-        options: {
-            attribution: '© <a href="https://carto.com/">CARTO</a> | © OpenStreetMap contributors',
-            subdomains: 'abcd',
-            maxZoom: 20,
-            minZoom: 2,
-            pane: 'tilePane'
-        }
-    },
     osm: {
         name: 'OpenStreetMap',
         url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
         options: {
             attribution: '© OpenStreetMap contributors',
             maxZoom: 19,
-            minZoom: 2,
-            pane: 'tilePane'
-        }
-    },
-    carto_voyager: {
-        name: 'Carto Voyager',
-        url: 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
-        options: {
-            attribution: '© <a href="https://carto.com/">CARTO</a> | © OpenStreetMap contributors',
-            subdomains: 'abcd',
-            maxZoom: 20,
             minZoom: 2,
             pane: 'tilePane'
         }
@@ -123,11 +138,11 @@ const BASEMAP_OPTIONS = {
     }
 };
 
-let currentBaseMapId = 'carto_voyager';
+let currentBaseMapId = 'gisco_positron';
 let baseLayer = null;
 
 function setBaseMap(baseMapId) {
-    const cfg = BASEMAP_OPTIONS[baseMapId] || BASEMAP_OPTIONS[currentBaseMapId] || BASEMAP_OPTIONS.carto_dark;
+    const cfg = BASEMAP_OPTIONS[baseMapId] || BASEMAP_OPTIONS[currentBaseMapId] || BASEMAP_OPTIONS.gisco_positron;
     if (!cfg) return;
 
     if (baseLayer && map.hasLayer(baseLayer)) {
@@ -135,7 +150,7 @@ function setBaseMap(baseMapId) {
     }
 
     baseLayer = L.tileLayer(cfg.url, cfg.options).addTo(map);
-    currentBaseMapId = baseMapId in BASEMAP_OPTIONS ? baseMapId : 'carto_dark';
+    currentBaseMapId = baseMapId in BASEMAP_OPTIONS ? baseMapId : 'gisco_positron';
     window.currentBaseMapId = currentBaseMapId;
     console.log(`🗺️ Basemap switched to: ${cfg.name}`);
 }
