@@ -1537,6 +1537,12 @@ function attachLayerControlListeners(layerId) {
                     }
                     targetLayer.setOpacity(1.0);
                     layerData.elevation = newVal;
+                    // Keep the base WMS layer's elevation in sync even though it's covered by
+                    // the frame instance. Otherwise, when a later zoom removes the frame
+                    // instance (zoomstart), the base layer is uncovered still rendering its
+                    // OLD elevation (day 0) → the map silently jumps to day 0. noRedraw=true
+                    // so no network request fires while the frame instance is on top.
+                    if (layerData.wmsLayer) layerData.wmsLayer.setParams({ elevation: newVal }, true);
                     if (window.updateLayerInfo && window.currentParams && window.currentParams.layer === layerId) {
                         window.currentParams.elevation = newVal;
                         window.updateLayerInfo();
@@ -2198,6 +2204,10 @@ const debouncedIndividualElevationUpdate = debounce(async (layerId, newVal) => {
             targetLayer.setOpacity(1.0);
 
             layerData.elevation = newVal;
+            // Keep the covered base WMS layer's elevation in sync so a later zoom (which
+            // removes the frame instance) uncovers the base layer at the CORRECT day, not
+            // day 0. noRedraw=true → no network request while the frame instance is on top.
+            if (layerData.wmsLayer) layerData.wmsLayer.setParams({ elevation: newVal }, true);
             if (window.updateLayerInfo && window.currentParams && window.currentParams.layer === layerId) {
                 window.currentParams.elevation = newVal;
                 window.updateLayerInfo();

@@ -363,6 +363,7 @@ function printPerformanceSummary() {
 let animationTimer = null;
 window.isAnimating = false;
 window.isAnimationLoading = false; // Add missing flag to window
+window.isBackgroundWarming = false; // Idle non-seeded frame warm-up (NOT a running animation)
 let isAnimationBusy = false; // Lock to prevent overlapping frame transitions
 let animationSpeed = 500; // milliseconds per frame (0.5 second local)
 // Debounce timer for auto-preload on rapid date/hour switching
@@ -1224,6 +1225,69 @@ window.preloadSingleFrame = async function (layerId, elevation) {
     return preloadPromise;
 };
 
+// After a zoom, re-assert the day the user actually has selected (layerData.elevation)
+// instead of letting the layer snap back to day 0. Zoom tears down the animation-frame
+// instances (zoomstart) and evicts their cache entries for the old zoom (zoomend), and
+// the re-preload path always front-loads frame 0 — so without this the visible frame
+// (or the base WMS layer's elevation) drops to 0. This is the idle-state analogue of the
+// "instant cache-hit swap" in multi-layer.js: show the cached frame for the selected day
+// if present, otherwise pin the base WMS layer to that elevation so it renders on the fly.
+window.restoreVideoFrameForZoom = function (layerId, layerData) {
+    // Only bail for a genuinely RUNNING animation (isAnimating) — the animation loop owns
+    // the frames then. Do NOT bail on isAnimationLoading/isBackgroundWarming: those are idle
+    // preload/warm states where the user's selected day must still be re-asserted. (Previously
+    // bailing on isAnimationLoading was why this fix intermittently did nothing.)
+    if (window.isAnimating) return;
+    if (!layerData || !layerData.metadata || layerData.metadata.type !== 'video') return;
+    if (layerData.hidden) return;
+
+    const selectedDay = layerData.elevation || 0;
+    const zoom = Math.round(map.getZoom());
+    const fixedZoom = (GWC_LAYERS.includes(layerId) && zoom >= 6) ? 6 : zoom;
+    const cacheKey = `${layerId}-${selectedDay}-${fixedZoom}`;
+    const cachedFrame = window.animationCache && window.animationCache[cacheKey];
+
+    if (cachedFrame) {
+        // Cache hit: hide every other frame instance and show the selected day on top.
+        Object.values(window.animationCache).forEach(layer => {
+            if (layer && layer !== cachedFrame && window.map && window.map.hasLayer(layer)) {
+                layer.setOpacity(0);
+            }
+        });
+        if (window.map && !window.map.hasLayer(cachedFrame)) {
+            cachedFrame.setOpacity(0);
+            cachedFrame.addTo(window.map);
+        }
+        cachedFrame.setOpacity(1.0);
+        cachedFrame.bringToFront();
+        console.log(`🔁 [ZOOM RESTORE] ${layerId} showing cached day ${selectedDay} @ zoom ${fixedZoom}`);
+        return;
+    }
+
+    // No cached frame for the selected day at this zoom yet. Make sure the base WMS layer
+    // renders the SELECTED day (not day 0) and is visible, so the map doesn't jump to day 0
+    // while frames warm up in the background. Any stale frame instances stay hidden.
+    if (window.animationCache) {
+        Object.values(window.animationCache).forEach(layer => {
+            if (layer && window.map && window.map.hasLayer(layer)) layer.setOpacity(0);
+        });
+    }
+    if (layerData.wmsLayer) {
+        const currentElev = layerData.wmsLayer.wmsParams && layerData.wmsLayer.wmsParams.elevation;
+        // Always set the param AND force a redraw. Only comparing the param string and
+        // skipping the redraw let the base layer keep painting stale day-0 tiles after being
+        // uncovered (param said 6 but on-screen tiles were still 0, and day 0 renders fine so
+        // no 400 → no "No data" banner ever appeared). Force the redraw so tiles match the day.
+        layerData.wmsLayer.setParams({ elevation: selectedDay }, false);
+        layerData.wmsLayer.setOpacity(1.0);
+        if (window.map && !window.map.hasLayer(layerData.wmsLayer)) {
+            layerData.wmsLayer.addTo(window.map);
+        }
+        layerData.wmsLayer.redraw();
+        console.log(`🔁 [ZOOM RESTORE] ${layerId} base layer pinned to day ${selectedDay} (elev was ${currentElev}) @ zoom ${fixedZoom}`);
+    }
+};
+
 async function preloadFrame(day, updateProgress = null, zoomLevel = null) {
     // Use current zoom if not specified
     if (zoomLevel === null) {
@@ -1502,18 +1566,27 @@ async function preloadAllFrames(forceAllFrames = false) {
             playBtn.innerHTML = originalText;
             console.timeEnd('⏱️ Total preload time');
 
-            // Background warm-up: 2 frames per 400ms — doesn't block UI, can be cancelled by date change
+            // Background warm-up: 2 frames per 400ms — doesn't block UI, can be cancelled by date change.
+            // Uses a DEDICATED flag (isBackgroundWarming), NOT isAnimationLoading: this loop runs
+            // AFTER preloadAllFrames returns and autoPreloadVideoLayer clears isAnimationLoading, so
+            // if it kept isAnimationLoading true it would make zoomstart's stopAnimation() check and
+            // restoreVideoFrameForZoom's guard treat idle warm-up as "animating" → the day resets to 0.
             const layerSnapshot = currentParams.layer;
             const timeSnapshot = currentParams.time;
+            window.isBackgroundWarming = true;
             (async () => {
-                for (let i = 1; i < totalFrames; i += 2) {
-                    // Stop if date/layer changed or animation started
-                    if (currentParams.layer !== layerSnapshot || currentParams.time !== timeSnapshot
-                            || window.isAnimating || window.isAnimationLoading) break;
-                    const batch = [preloadFrame(i, null, currentZoom)];
-                    if (i + 1 < totalFrames) batch.push(preloadFrame(i + 1, null, currentZoom));
-                    await Promise.all(batch);
-                    await new Promise(r => setTimeout(r, 400));
+                try {
+                    for (let i = 1; i < totalFrames; i += 2) {
+                        // Stop if date/layer changed or animation started
+                        if (currentParams.layer !== layerSnapshot || currentParams.time !== timeSnapshot
+                                || window.isAnimating || window.isAnimationLoading) break;
+                        const batch = [preloadFrame(i, null, currentZoom)];
+                        if (i + 1 < totalFrames) batch.push(preloadFrame(i + 1, null, currentZoom));
+                        await Promise.all(batch);
+                        await new Promise(r => setTimeout(r, 400));
+                    }
+                } finally {
+                    window.isBackgroundWarming = false;
                 }
             })();
             return true;
@@ -1880,6 +1953,7 @@ function stopAnimation() {
     try {
         // Force immediate flag updates to stop loop
         window.isAnimationLoading = false;
+        window.isBackgroundWarming = false;
         window.isAnimating = false;
 
         if (animationTimer) {
@@ -2520,15 +2594,35 @@ L.control.scale({ imperial: false, metric: true }).addTo(map);
 map.on('zoomstart', function () {
     trackOperationStart('zoom');
 
-    if (window.isAnimating || window.isAnimationLoading) {
-        // Just STOP the animation completely. Do not try to auto-resume or reload frames.
-        // The user complained about the animation trying to aggressively reload/resume automatically.
-        console.log('🛑 Zoom detected - Stopping animation');
+    if (window.isAnimating) {
+        // A REAL animation is playing → stop it fully. stopAnimation() resets the day to 0,
+        // which is correct here because the user was watching the animation, not a pinned day.
+        console.log('🛑 Zoom detected - Stopping running animation');
         if (typeof window.stopAnimation === 'function') {
             window.stopAnimation();
         }
 
         // Clear cache and remove layers to prevent background loading
+        if (window.animationCache) {
+            Object.values(window.animationCache).forEach(layer => {
+                if (layer && window.map && window.map.hasLayer(layer)) {
+                    window.map.removeLayer(layer);
+                }
+            });
+            window.animationCache = {};
+        }
+        if (typeof window.resetPreloadStatus === 'function') {
+            window.resetPreloadStatus();
+        }
+    } else if (window.isAnimationLoading || window.isBackgroundWarming) {
+        // Only an IDLE preload/warm-up is in flight (NOT a user-started animation). Cancel it
+        // WITHOUT calling stopAnimation() — stopAnimation zeroes the selected day, which is the
+        // root cause of the intermittent "zoom jumps to day 0". Just abort the preload and drop
+        // the invisible frame instances; the user's selected day (layerData.elevation) is kept
+        // and re-asserted by restoreVideoFrameForZoom in zoomend.
+        console.log('🧊 Zoom detected during idle preload — cancelling preload, keeping selected day');
+        window.isAnimationLoading = false;
+        window.isBackgroundWarming = false;
         if (window.animationCache) {
             Object.values(window.animationCache).forEach(layer => {
                 if (layer && window.map && window.map.hasLayer(layer)) {
@@ -2584,10 +2678,41 @@ map.on('zoomend', function () {
         setTimeout(() => {
             if (!window.isAnimating && currentParams.layer) {
                 console.log('🔥 [PRE-WARM] Preloading current frame for new zoom level');
-                window.preloadSingleFrame(currentParams.layer, currentParams.elevation);
+                // Pre-warm each active VIDEO layer at ITS OWN selected day (layerData.elevation),
+                // not currentParams.elevation. currentParams.elevation only tracks whichever layer
+                // is "current" and can be 0/stale (e.g. after a stop or when the user scrubbed a
+                // different active video layer), which would pre-warm a day-0 frame and let it
+                // surface on top. Fall back to currentParams only for the single-layer legacy path.
+                let prewarmedVideo = false;
+                if (window.activeLayers) {
+                    window.activeLayers.forEach((layerData, layerId) => {
+                        if (layerData.metadata && layerData.metadata.type === 'video'
+                                && GWC_LAYERS.includes(layerId) && !layerData.hidden) {
+                            prewarmedVideo = true;
+                            window.preloadSingleFrame(layerId, layerData.elevation || 0);
+                        }
+                    });
+                }
+                if (!prewarmedVideo) {
+                    window.preloadSingleFrame(currentParams.layer, currentParams.elevation);
+                }
             }
             console.log('✅ WMS layer refreshed for zoom level', newZoom);
         }, 100);
+    }
+
+    // Re-assert the user's selected day for every video layer IMMEDIATELY after zoom.
+    // zoomstart removed the frame instances and zoomend evicted the old-zoom cache, so
+    // without this the layer visibly snaps to day 0 before (or instead of) the re-preload
+    // repaints the correct day. Runs before the 400ms preload kick-off below.
+    // Guard on isAnimating only (a running animation owns the frames); background warm/idle
+    // preload must NOT block the restore.
+    if (!window.isAnimating && window.activeLayers && window.restoreVideoFrameForZoom) {
+        window.activeLayers.forEach((layerData, layerId) => {
+            if (layerData.metadata && layerData.metadata.type === 'video' && GWC_LAYERS.includes(layerId)) {
+                window.restoreVideoFrameForZoom(layerId, layerData);
+            }
+        });
     }
 
     // Re-preload video frames for the new zoom so slider stays smooth after zooming.
@@ -2602,7 +2727,17 @@ map.on('zoomend', function () {
                             && GWC_LAYERS.includes(layerId)
                             && !window.isAnimating && !window.isAnimationLoading) {
                         console.log(`🔄 [ZOOM ${roundedNew}] Re-preloading ${layerId} — ${strategy}`);
-                        window.autoPreloadVideoLayer(layerId);
+                        // autoPreloadVideoLayer front-loads day 0 (opacity 0) and may leave a
+                        // day-0 instance on top. Chain the restore to its completion (not a
+                        // fixed timeout) so the user's selected day always ends up visible,
+                        // regardless of how long the preload took.
+                        Promise.resolve(window.autoPreloadVideoLayer(layerId)).finally(() => {
+                            if (!window.isAnimating
+                                    && window.restoreVideoFrameForZoom
+                                    && window.activeLayers && window.activeLayers.has(layerId)) {
+                                window.restoreVideoFrameForZoom(layerId, window.activeLayers.get(layerId));
+                            }
+                        });
                     }
                 });
             }
