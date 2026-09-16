@@ -187,6 +187,14 @@ if (!map.getPane('animWmsPane')) {
     map.getPane('animWmsPane').style.zIndex = 450;
     map.getPane('animWmsPane').style.pointerEvents = 'none';
 }
+// overlayWmsPane (z=460) → non-video overlay layers (summary/static/points/choropleth).
+// Sits ABOVE animWmsPane (450) so a video day-swap (which shows a frame instance at 450)
+// covers only the video's OWN base layer (350), never an overlay the user stacked on top.
+if (!map.getPane('overlayWmsPane')) {
+    map.createPane('overlayWmsPane');
+    map.getPane('overlayWmsPane').style.zIndex = 460;
+    map.getPane('overlayWmsPane').style.pointerEvents = 'none';
+}
 
 // ═══════════════════════════════════════════════════════════════
 // MULTI-LEVEL ZOOM CACHE SYSTEM

@@ -916,7 +916,11 @@ function addLayer(layerId) {
         minZoom: 0,
         crossOrigin: true,
         opacity: params.opacity,
-        pane: 'baseWmsPane'  // FIX: always below animation frames (animWmsPane z=450)
+        // Video base layers go in baseWmsPane (350) so their own day-swap frames (animWmsPane
+        // 450) correctly cover them. Every OTHER layer type goes in overlayWmsPane (460), ABOVE
+        // the frames, so a video day-swap can't visually hide a summary/static/points/choropleth
+        // layer the user stacked on top.
+        pane: (metadata && metadata.type === 'video') ? 'baseWmsPane' : 'overlayWmsPane'
     });
 
     wmsLayer.addTo(window.map);
