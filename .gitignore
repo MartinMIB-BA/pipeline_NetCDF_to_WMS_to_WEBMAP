@@ -112,3 +112,8 @@ __pycache__/
 scripts/tests/
 scripts/pytest.ini
 scripts/requirements-dev.txt
+
+### LOCAL FRONTEND SANDBOX (Windy-style visual experiments) ###
+# web-lab/ is a local-only copy of web/ for experimenting with rendering.
+# Never deployed (deploy scripts only touch web/); not versioned.
+web-lab/
