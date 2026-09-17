@@ -8,6 +8,8 @@
 .idea/
 .vscode/
 .claude
+# Kiro IDE local config (agents, hooks, steering) — machine-local, not versioned
+.kiro/
 
 # Ignore distribution and build folders
 build/
@@ -105,3 +107,8 @@ __pycache__/
 *$py.class
 *.so
 .Python
+
+### DEV-ONLY TESTS & TOOLING (not part of the deployed pipeline) ###
+scripts/tests/
+scripts/pytest.ini
+scripts/requirements-dev.txt
