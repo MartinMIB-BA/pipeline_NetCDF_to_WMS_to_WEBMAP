@@ -148,14 +148,37 @@ class WMSMetadata {
             dateToHours.get(dateStr).add(hourStr);
         };
 
+        // Video layers publish a fixed 00:00Z + 12:00Z daily cadence. GeoServer,
+        // however, describes their TIME dimension as an interval with a bogus
+        // period derived from irregular granules (e.g. "P8M2WT16H"), which no
+        // sane parser can turn into a 12-hour step. For these layers we KNOW the
+        // real cadence, so force a 12-hour expansion step and skip the heuristics.
+        const VIDEO_LAYERS_FIXED_12H = ['twl75', 'epis_wl75'];
+        const forceStepMs = VIDEO_LAYERS_FIXED_12H.includes(layerId)
+            ? 12 * 60 * 60 * 1000
+            : null;
+
+        // ISO-8601 duration parser. Supports W (weeks), Y/M (years/months, as
+        // calendar-agnostic approximations — only used as a fallback), plus the
+        // usual D/H/M/S. Previously it only knew D/H/M/S, so any period containing
+        // W or a leading month field (e.g. "P8M2WT16H") failed to match and fell
+        // through to the fragile inferStepMs heuristic below — which is exactly
+        // how twl75's 12:00Z timesteps went missing from the time index.
         const parseDurationToMs = (dur) => {
-            const m = dur.match(/^P(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?)?$/);
+            const m = dur.match(/^P(?:(\d+)Y)?(?:(\d+)M)?(?:(\d+)W)?(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?)?$/);
             if (!m) return null;
-            const days = parseInt(m[1] || '0', 10);
-            const hours = parseInt(m[2] || '0', 10);
-            const minutes = parseInt(m[3] || '0', 10);
-            const seconds = parseInt(m[4] || '0', 10);
-            const ms = (((days * 24 + hours) * 60 + minutes) * 60 + seconds) * 1000;
+            const years = parseInt(m[1] || '0', 10);
+            const months = parseInt(m[2] || '0', 10);
+            const weeks = parseInt(m[3] || '0', 10);
+            const days = parseInt(m[4] || '0', 10);
+            const hours = parseInt(m[5] || '0', 10);
+            const minutes = parseInt(m[6] || '0', 10);
+            const seconds = parseInt(m[7] || '0', 10);
+            // Calendar-agnostic approximations for Y/M (30d month, 365d year). These
+            // are only ever hit for non-video layers with well-formed periods; video
+            // layers use forceStepMs and never rely on this.
+            const totalDays = years * 365 + months * 30 + weeks * 7 + days;
+            const ms = (((totalDays * 24 + hours) * 60 + minutes) * 60 + seconds) * 1000;
             return ms > 0 ? ms : null;
         };
 
@@ -176,7 +199,8 @@ class WMSMetadata {
                 const parts = t.split('/');
                 const start = new Date(parts[0]);
                 const end = new Date(parts[1]);
-                let stepMs = parts[2] ? parseDurationToMs(parts[2]) : null;
+                // Priority: forced video step > parsed period > inferred heuristic.
+                let stepMs = forceStepMs || (parts[2] ? parseDurationToMs(parts[2]) : null);
                 if (!stepMs) stepMs = inferStepMs(start, end);
                 if (!isNaN(start.getTime()) && !isNaN(end.getTime()) && stepMs) {
                     let count = 0;
