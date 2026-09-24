@@ -2802,6 +2802,10 @@ function makePopupDraggable(popup) {
         startX = e.clientX;
         startY = e.clientY;
 
+        // Suppress the browser's default text selection that a press-drag on the body
+        // would otherwise start (highlighting the popup text).
+        e.preventDefault();
+
         handle.setPointerCapture(e.pointerId);
     });
 
@@ -2835,6 +2839,10 @@ function makePopupDraggable(popup) {
             popupEl.style.top = curTop + 'px';
             document.body.appendChild(popupEl);
 
+            popupEl.classList.add('popup-dragging');
+            // Clear any selection the press may have already started.
+            const sel = window.getSelection && window.getSelection();
+            if (sel && sel.removeAllRanges) sel.removeAllRanges();
             handle.style.cursor = 'grabbing';
         }
 
@@ -2864,6 +2872,7 @@ function makePopupDraggable(popup) {
         }
         pending = false;
         dragging = false;
+        popupEl.classList.remove('popup-dragging');
         handle.style.cursor = 'grab';
         try { handle.releasePointerCapture(e.pointerId); } catch (_) { }
     };

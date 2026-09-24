@@ -1122,6 +1122,14 @@
             display: none;
         }
 
+        /* While actively dragging, suppress text selection so grabbing the popup body
+           doesn't highlight its text. Selection is still allowed when not dragging. */
+        .leaflet-popup.popup-dragging,
+        .leaflet-popup.popup-dragging * {
+            user-select: none !important;
+            -webkit-user-select: none !important;
+        }
+
         .leaflet-popup-content-wrapper {
             background: var(--glass-bg) !important;
             backdrop-filter: var(--glass-blur) !important;
