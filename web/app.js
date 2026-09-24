@@ -2798,10 +2798,6 @@ function makePopupDraggable(popup) {
         startX = e.clientX;
         startY = e.clientY;
 
-        const rect = popupEl.getBoundingClientRect();
-        initialLeft = rect.left;
-        initialTop = rect.top;
-
         handle.setPointerCapture(e.pointerId);
     });
 
@@ -2817,16 +2813,25 @@ function makePopupDraggable(popup) {
             pending = false;
 
             // Detach from Leaflet's anchored positioning so both axes move freely.
+            // Leaflet centers the popup over the point via a negative margin-left and
+            // positions it with transform/bottom. Measuring the rect BEFORE clearing
+            // those and then zeroing them made the popup jump (it lost the centering
+            // margin). So neutralize the layout styles FIRST, then read the rect — that
+            // rect already reflects the final box, so left/top land exactly in place.
             popupEl.classList.add('popup-user-positioned');
             popupEl.style.position = 'fixed';
             popupEl.style.margin = '0';
             popupEl.style.transform = 'none';
             popupEl.style.bottom = 'auto';
             popupEl.style.right = 'auto';
-            popupEl.style.left = initialLeft + 'px';
-            popupEl.style.top = initialTop + 'px';
             popupEl.style.zIndex = '10000';
             handle.style.cursor = 'grabbing';
+
+            const rect = popupEl.getBoundingClientRect();
+            initialLeft = rect.left;
+            initialTop = rect.top;
+            popupEl.style.left = initialLeft + 'px';
+            popupEl.style.top = initialTop + 'px';
         }
 
         e.preventDefault();
