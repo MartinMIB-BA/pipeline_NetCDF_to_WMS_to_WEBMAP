@@ -2765,13 +2765,17 @@ let activeTimeSeriesController = null;
 
 // Make a Leaflet popup manually draggable via its ".popup-drag-handle" header.
 //
-// Make a Leaflet popup draggable by grabbing its body, just like the static widgets
-// (see ui-interactions.js makeDraggable). While anchored, Leaflet positions the popup
-// with `transform` + `bottom`/`left`, so applying `margin-top` couldn't move it
-// vertically (only horizontal worked) — that was the "only left/right" bug. Instead, on
-// the first real drag we detach the popup into `position: fixed` with explicit
-// `left`/`top` (clearing Leaflet's transform/bottom), then move it freely in both axes.
-// Once detached it stays put on screen like the other floating panels.
+// Make a Leaflet popup draggable by grabbing its body, like the static widgets.
+//
+// Why this needs to move the element out of the map: the popup lives inside
+// `.leaflet-map-pane`, which itself has a CSS `transform`. A `position: fixed` child of
+// a transformed ancestor is positioned relative to THAT ancestor, not the viewport — so
+// setting fixed + left/top on the in-map popup made it jump wildly. The fix is to lift
+// the popup element into `document.body` on first drag; there `position: fixed` behaves
+// against the viewport (exactly like the other floating panels).
+//
+// We capture the popup's real on-screen rect (via getBoundingClientRect, which already
+// includes Leaflet's transform + centering margin) BEFORE moving it, then pin it there.
 //
 // Not persisted per instance: a new click builds a new popup that reopens on the point.
 function makePopupDraggable(popup) {
@@ -2785,7 +2789,7 @@ function makePopupDraggable(popup) {
     handle.style.cursor = 'grab';
 
     let startX = 0, startY = 0;
-    let initialLeft = 0, initialTop = 0;
+    let curLeft = 0, curTop = 0;
     let dragging = false, pending = false;
     const THRESHOLD = 4;
 
@@ -2812,12 +2816,14 @@ function makePopupDraggable(popup) {
             dragging = true;
             pending = false;
 
-            // Detach from Leaflet's anchored positioning so both axes move freely.
-            // Leaflet centers the popup over the point via a negative margin-left and
-            // positions it with transform/bottom. Measuring the rect BEFORE clearing
-            // those and then zeroing them made the popup jump (it lost the centering
-            // margin). So neutralize the layout styles FIRST, then read the rect — that
-            // rect already reflects the final box, so left/top land exactly in place.
+            // 1) Capture the popup's true viewport position WHILE it's still anchored
+            //    inside the map (rect already reflects Leaflet's transform + margins).
+            const rect = popupEl.getBoundingClientRect();
+            curLeft = rect.left;
+            curTop = rect.top;
+
+            // 2) Lift the element out of the transformed map pane into <body> so that
+            //    position:fixed is resolved against the viewport, then pin it in place.
             popupEl.classList.add('popup-user-positioned');
             popupEl.style.position = 'fixed';
             popupEl.style.margin = '0';
@@ -2825,32 +2831,37 @@ function makePopupDraggable(popup) {
             popupEl.style.bottom = 'auto';
             popupEl.style.right = 'auto';
             popupEl.style.zIndex = '10000';
-            handle.style.cursor = 'grabbing';
+            popupEl.style.left = curLeft + 'px';
+            popupEl.style.top = curTop + 'px';
+            document.body.appendChild(popupEl);
 
-            const rect = popupEl.getBoundingClientRect();
-            initialLeft = rect.left;
-            initialTop = rect.top;
-            popupEl.style.left = initialLeft + 'px';
-            popupEl.style.top = initialTop + 'px';
+            handle.style.cursor = 'grabbing';
         }
 
         e.preventDefault();
 
-        let newLeft = initialLeft + dx;
-        let newTop = initialTop + dy;
+        let newLeft = curLeft + dx;
+        let newTop = curTop + dy;
 
         // Keep the popup within the viewport.
-        const rect = popupEl.getBoundingClientRect();
+        const w = popupEl.offsetWidth;
+        const h = popupEl.offsetHeight;
         if (newLeft < 0) newLeft = 0;
         if (newTop < 0) newTop = 0;
-        if (newLeft + rect.width > window.innerWidth) newLeft = window.innerWidth - rect.width;
-        if (newTop + rect.height > window.innerHeight) newTop = window.innerHeight - rect.height;
+        if (newLeft + w > window.innerWidth) newLeft = window.innerWidth - w;
+        if (newTop + h > window.innerHeight) newTop = window.innerHeight - h;
 
         popupEl.style.left = newLeft + 'px';
         popupEl.style.top = newTop + 'px';
     });
 
     const endDrag = (e) => {
+        // Commit the current position as the new baseline so the next drag continues
+        // from here instead of snapping back to the original capture point.
+        if (dragging) {
+            curLeft = parseFloat(popupEl.style.left) || curLeft;
+            curTop = parseFloat(popupEl.style.top) || curTop;
+        }
         pending = false;
         dragging = false;
         handle.style.cursor = 'grab';
