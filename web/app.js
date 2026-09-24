@@ -2765,43 +2765,48 @@ let activeTimeSeriesController = null;
 
 // Make a Leaflet popup manually draggable via its ".popup-drag-handle" header.
 //
-// Leaflet keeps the popup anchored to its latlng by continuously writing an inline
-// `transform` on the `.leaflet-popup` element (on pan/zoom). We must NOT fight that,
-// otherwise the popup detaches from the map. Instead we apply the user's manual move
-// as a separate `margin-left`/`margin-top` offset on the same element — Leaflet does
-// not touch those, so the offset simply stacks on top of the anchor transform and the
-// popup keeps tracking the point while sitting where the user dragged it.
+// Make a Leaflet popup draggable by grabbing its body, just like the static widgets
+// (see ui-interactions.js makeDraggable). While anchored, Leaflet positions the popup
+// with `transform` + `bottom`/`left`, so applying `margin-top` couldn't move it
+// vertically (only horizontal worked) — that was the "only left/right" bug. Instead, on
+// the first real drag we detach the popup into `position: fixed` with explicit
+// `left`/`top` (clearing Leaflet's transform/bottom), then move it freely in both axes.
+// Once detached it stays put on screen like the other floating panels.
 //
-// The offset lives only on this popup instance (not persisted): a new click makes a new
-// popup that opens back on the point with no offset — exactly the requested behaviour.
+// Not persisted per instance: a new click builds a new popup that reopens on the point.
 function makePopupDraggable(popup) {
     const popupEl = popup && popup.getElement();
     if (!popupEl) return;
+    if (popupEl.dataset.dragBound === '1') return;
+    popupEl.dataset.dragBound = '1';
 
-    const handle = popupEl.querySelector('.popup-drag-handle');
-    if (!handle || handle.dataset.dragBound === '1') return;
-    handle.dataset.dragBound = '1';
+    // Grab anywhere on the popup body except interactive/scrollable bits.
+    const handle = popupEl.querySelector('.leaflet-popup-content-wrapper') || popupEl;
+    handle.style.cursor = 'grab';
 
-    let offsetX = 0, offsetY = 0;          // accumulated manual offset (px)
-    let startX = 0, startY = 0;            // pointer position at drag start
-    let baseX = 0, baseY = 0;              // offset at drag start
+    let startX = 0, startY = 0;
+    let initialLeft = 0, initialTop = 0;
     let dragging = false, pending = false;
-    const THRESHOLD = 3;
+    const THRESHOLD = 4;
 
     handle.addEventListener('pointerdown', (e) => {
+        // Don't start a drag from the close button, links, or the chart hover targets.
+        if (e.target.closest('a, button, .leaflet-popup-close-button, .ts-hit, svg')) return;
+
         pending = true;
         dragging = false;
         startX = e.clientX;
         startY = e.clientY;
-        baseX = offsetX;
-        baseY = offsetY;
+
+        const rect = popupEl.getBoundingClientRect();
+        initialLeft = rect.left;
+        initialTop = rect.top;
+
         handle.setPointerCapture(e.pointerId);
-        e.preventDefault();
     });
 
     handle.addEventListener('pointermove', (e) => {
         if (!pending && !dragging) return;
-        e.preventDefault();
 
         const dx = e.clientX - startX;
         const dy = e.clientY - startY;
@@ -2810,21 +2815,40 @@ function makePopupDraggable(popup) {
             if (Math.abs(dx) < THRESHOLD && Math.abs(dy) < THRESHOLD) return;
             dragging = true;
             pending = false;
-            // Hide the anchor tip once detached — it no longer points at the popup.
+
+            // Detach from Leaflet's anchored positioning so both axes move freely.
             popupEl.classList.add('popup-user-positioned');
-            // Keep the popup above other panes while being moved.
+            popupEl.style.position = 'fixed';
+            popupEl.style.margin = '0';
+            popupEl.style.transform = 'none';
+            popupEl.style.bottom = 'auto';
+            popupEl.style.right = 'auto';
+            popupEl.style.left = initialLeft + 'px';
+            popupEl.style.top = initialTop + 'px';
             popupEl.style.zIndex = '10000';
+            handle.style.cursor = 'grabbing';
         }
 
-        offsetX = baseX + dx;
-        offsetY = baseY + dy;
-        popupEl.style.marginLeft = offsetX + 'px';
-        popupEl.style.marginTop = offsetY + 'px';
+        e.preventDefault();
+
+        let newLeft = initialLeft + dx;
+        let newTop = initialTop + dy;
+
+        // Keep the popup within the viewport.
+        const rect = popupEl.getBoundingClientRect();
+        if (newLeft < 0) newLeft = 0;
+        if (newTop < 0) newTop = 0;
+        if (newLeft + rect.width > window.innerWidth) newLeft = window.innerWidth - rect.width;
+        if (newTop + rect.height > window.innerHeight) newTop = window.innerHeight - rect.height;
+
+        popupEl.style.left = newLeft + 'px';
+        popupEl.style.top = newTop + 'px';
     });
 
     const endDrag = (e) => {
         pending = false;
         dragging = false;
+        handle.style.cursor = 'grab';
         try { handle.releasePointerCapture(e.pointerId); } catch (_) { }
     };
     handle.addEventListener('pointerup', endDrag);
@@ -2920,7 +2944,6 @@ async function getFeatureInfo(latlng) {
         // width:340px fixed + box-sizing so the responsive chart (width:100%) fits exactly
         // inside without triggering a horizontal scrollbar. overflow-x:hidden as a safety net.
         let content = '<div style="width: 340px; max-width: 340px; max-height: 500px; overflow-y: auto; overflow-x: hidden; box-sizing: border-box;">';
-        content += `<div class="popup-drag-handle" title="Drag to move"><i class="fa-solid fa-up-down-left-right"></i><span>Move</span></div>`;
         content += `<div style="margin-bottom:8px; font-size:12px;">`;
         content += `<span style="font-weight:600; color:#4fc3f7;">Lat:</span> `;
         content += `<span style="color:#ffffff; font-weight:700;">${latlng.lat.toFixed(6)}</span> `;
