@@ -2763,6 +2763,74 @@ let activeGetFeatureInfoController = null;
 // GetFeatureInfo finally-block has cleared activeGetFeatureInfoController.
 let activeTimeSeriesController = null;
 
+// Make a Leaflet popup manually draggable via its ".popup-drag-handle" header.
+//
+// Leaflet keeps the popup anchored to its latlng by continuously writing an inline
+// `transform` on the `.leaflet-popup` element (on pan/zoom). We must NOT fight that,
+// otherwise the popup detaches from the map. Instead we apply the user's manual move
+// as a separate `margin-left`/`margin-top` offset on the same element — Leaflet does
+// not touch those, so the offset simply stacks on top of the anchor transform and the
+// popup keeps tracking the point while sitting where the user dragged it.
+//
+// The offset lives only on this popup instance (not persisted): a new click makes a new
+// popup that opens back on the point with no offset — exactly the requested behaviour.
+function makePopupDraggable(popup) {
+    const popupEl = popup && popup.getElement();
+    if (!popupEl) return;
+
+    const handle = popupEl.querySelector('.popup-drag-handle');
+    if (!handle || handle.dataset.dragBound === '1') return;
+    handle.dataset.dragBound = '1';
+
+    let offsetX = 0, offsetY = 0;          // accumulated manual offset (px)
+    let startX = 0, startY = 0;            // pointer position at drag start
+    let baseX = 0, baseY = 0;              // offset at drag start
+    let dragging = false, pending = false;
+    const THRESHOLD = 3;
+
+    handle.addEventListener('pointerdown', (e) => {
+        pending = true;
+        dragging = false;
+        startX = e.clientX;
+        startY = e.clientY;
+        baseX = offsetX;
+        baseY = offsetY;
+        handle.setPointerCapture(e.pointerId);
+        e.preventDefault();
+    });
+
+    handle.addEventListener('pointermove', (e) => {
+        if (!pending && !dragging) return;
+        e.preventDefault();
+
+        const dx = e.clientX - startX;
+        const dy = e.clientY - startY;
+
+        if (!dragging) {
+            if (Math.abs(dx) < THRESHOLD && Math.abs(dy) < THRESHOLD) return;
+            dragging = true;
+            pending = false;
+            // Hide the anchor tip once detached — it no longer points at the popup.
+            popupEl.classList.add('popup-user-positioned');
+            // Keep the popup above other panes while being moved.
+            popupEl.style.zIndex = '10000';
+        }
+
+        offsetX = baseX + dx;
+        offsetY = baseY + dy;
+        popupEl.style.marginLeft = offsetX + 'px';
+        popupEl.style.marginTop = offsetY + 'px';
+    });
+
+    const endDrag = (e) => {
+        pending = false;
+        dragging = false;
+        try { handle.releasePointerCapture(e.pointerId); } catch (_) { }
+    };
+    handle.addEventListener('pointerup', endDrag);
+    handle.addEventListener('pointercancel', endDrag);
+}
+
 // Function to fetch and display GetFeatureInfo for all active layers
 async function getFeatureInfo(latlng) {
     // Check if using multi-layer system or single layer
@@ -2852,6 +2920,7 @@ async function getFeatureInfo(latlng) {
         // width:340px fixed + box-sizing so the responsive chart (width:100%) fits exactly
         // inside without triggering a horizontal scrollbar. overflow-x:hidden as a safety net.
         let content = '<div style="width: 340px; max-width: 340px; max-height: 500px; overflow-y: auto; overflow-x: hidden; box-sizing: border-box;">';
+        content += `<div class="popup-drag-handle" title="Drag to move"><i class="fa-solid fa-up-down-left-right"></i><span>Move</span></div>`;
         content += `<div style="margin-bottom:8px; font-size:12px;">`;
         content += `<span style="font-weight:600; color:#4fc3f7;">Lat:</span> `;
         content += `<span style="color:#ffffff; font-weight:700;">${latlng.lat.toFixed(6)}</span> `;
@@ -2977,6 +3046,11 @@ async function getFeatureInfo(latlng) {
                 popupEl.querySelectorAll('.ts-chart-slot').forEach(slot => attachTimeSeriesHover(slot));
             }
         }
+
+        // Make the popup manually draggable by its "Move" handle. It still opens anchored
+        // at the clicked point; the drag only applies a per-popup offset (not remembered),
+        // so a fresh click always reopens on the point.
+        makePopupDraggable(loadingPopup);
 
     } catch (error) {
         // Check if request was aborted

@@ -1116,6 +1116,36 @@
         }
 
         /* ── GetFeatureInfo Popup ── */
+        /* Drag handle for manually repositioning the click popup (video WMS charts). */
+        .popup-drag-handle {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            margin: -4px -4px 8px -4px;
+            padding: 4px 6px;
+            border-radius: 8px;
+            cursor: grab;
+            color: var(--text-dim);
+            font-size: 11px;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+            user-select: none;
+            touch-action: none;
+        }
+
+        .popup-drag-handle:hover {
+            background: rgba(255, 255, 255, 0.06);
+            color: var(--text-main);
+        }
+
+        .popup-drag-handle:active {
+            cursor: grabbing;
+        }
+
+        .leaflet-popup.popup-user-positioned .leaflet-popup-tip-container {
+            display: none;
+        }
+
         .leaflet-popup-content-wrapper {
             background: var(--glass-bg) !important;
             backdrop-filter: var(--glass-blur) !important;
