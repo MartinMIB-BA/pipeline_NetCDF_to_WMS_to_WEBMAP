@@ -2788,6 +2788,23 @@ function makePopupDraggable(popup) {
     const handle = popupEl.querySelector('.leaflet-popup-content-wrapper') || popupEl;
     handle.style.cursor = 'grab';
 
+    // Once we lift the popup out of the map (below), Leaflet's own close-button click
+    // wiring can stop closing it. Bind an explicit close so the "×" always works.
+    const closeBtn = popupEl.querySelector('.leaflet-popup-close-button');
+    if (closeBtn) {
+        closeBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            if (typeof map !== 'undefined' && map.closePopup) {
+                map.closePopup(popup);
+            } else if (popup.remove) {
+                popup.remove();
+            }
+            // If the element was reparented to <body>, remove it directly as a fallback.
+            if (popupEl.parentNode === document.body) popupEl.remove();
+        });
+    }
+
     let startX = 0, startY = 0;
     let curLeft = 0, curTop = 0;
     let dragging = false, pending = false;

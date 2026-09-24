@@ -1157,6 +1157,16 @@
             padding: 4px 8px !important;
         }
 
+        /* After the popup is lifted out of the map, keep the close "×" visible and on
+           top so it stays clickable in its detached, dragged state. */
+        .leaflet-popup.popup-user-positioned .leaflet-popup-close-button {
+            display: block !important;
+            position: absolute !important;
+            top: 0 !important;
+            right: 0 !important;
+            z-index: 2 !important;
+        }
+
         .leaflet-popup-close-button:hover {
             color: var(--primary) !important;
         }
