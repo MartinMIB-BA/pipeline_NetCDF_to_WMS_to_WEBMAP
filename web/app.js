@@ -2897,10 +2897,23 @@ function makePopupDraggable(popup) {
     handle.addEventListener('pointercancel', endDrag);
 }
 
+// Marker that pins the clicked point on the map for a draggable video-WMS popup, so it
+// stays clear which point the (possibly moved) popup refers to. Only one at a time.
+let clickPointMarker = null;
+function removeClickPointMarker() {
+    if (clickPointMarker && map.hasLayer(clickPointMarker)) {
+        map.removeLayer(clickPointMarker);
+    }
+    clickPointMarker = null;
+}
+
 // Function to fetch and display GetFeatureInfo for all active layers
 async function getFeatureInfo(latlng) {
     // Check if using multi-layer system or single layer
     const useMultiLayer = typeof activeLayers !== 'undefined' && activeLayers.size > 0;
+
+    // Clear any marker from a previous click before starting a new query.
+    removeClickPointMarker();
 
     if (!useMultiLayer && !wmsLayer) {
         console.warn('⚠️ No WMS layer active');
@@ -2930,6 +2943,9 @@ async function getFeatureInfo(latlng) {
         .setLatLng(latlng)
         .setContent('<i class="fa-solid fa-spinner fa-spin"></i> Loading data...')
         .openOn(map);
+
+    // When this popup closes (× button, new click, or Esc), drop its point marker.
+    loadingPopup.on('remove', removeClickPointMarker);
 
     try {
         // Get map pixel coordinates
@@ -3017,6 +3033,21 @@ async function getFeatureInfo(latlng) {
                     layerName: (typeof layerDisplayNames !== 'undefined' ? layerDisplayNames[currentParams.layer] : null) || currentParams.layer
                 });
             }
+        }
+
+        // For video-WMS clicks the popup is draggable and can be moved away from the
+        // clicked point, so drop a marker on the map to keep the source point clear.
+        if (videoLayersToChart.length > 0) {
+            removeClickPointMarker();
+            clickPointMarker = L.circleMarker(latlng, {
+                radius: 6,
+                color: '#ffffff',
+                weight: 2,
+                fillColor: '#4fc3f7',
+                fillOpacity: 0.9,
+                interactive: false,
+                pane: 'markerPane'
+            }).addTo(map);
         }
 
         // Fetch the 16-day time-series for each video layer BEFORE building the final popup,
