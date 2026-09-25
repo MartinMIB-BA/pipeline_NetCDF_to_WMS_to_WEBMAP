@@ -2856,6 +2856,13 @@ function makePopupDraggable(popup) {
             popupEl.style.top = curTop + 'px';
             document.body.appendChild(popupEl);
 
+            // Stop Leaflet from repositioning this popup on zoom/pan. Leaflet's popup
+            // reacts to zoomanim/zoom/viewreset by rewriting transform/left/top on its
+            // container (still our element) — that made the detached popup fly around
+            // when zooming. Neutralize those hooks so the fixed position sticks.
+            popup._updatePosition = function () { };
+            popup._animateZoom = function () { };
+
             popupEl.classList.add('popup-dragging');
             // Clear any selection the press may have already started.
             const sel = window.getSelection && window.getSelection();
