@@ -64,7 +64,10 @@ window.addEventListener('beforeunload', () => {
 const map = L.map('map', {
     preferCanvas: true,
     zoomControl: true,
-    minZoom: 2            // PREVENT REPEATED WORLDS: Keep zoom level high enough
+    minZoom: 2,           // PREVENT REPEATED WORLDS: Keep zoom level high enough
+    // Allow several GetFeatureInfo popups to stay open at once (multi-point charts).
+    // Without this, a map click / new popup would auto-close the previous one.
+    closePopupOnClick: false
 }).setView([45.0, 15.0], 4);
 
 // Basemap configuration + switcher
@@ -2756,12 +2759,41 @@ map.on('zoomend', function () {
 // ═══════════════════════════════════════════════════════════════
 // GET FEATURE INFO - CLICK TO VIEW DATA
 // ═══════════════════════════════════════════════════════════════
-// Track active GetFeatureInfo request to allow cancellation
-let activeGetFeatureInfoController = null;
-// Separate controller for the (longer-lived) video time-series chart requests, so a new
-// click aborts the previous chart's 16 in-flight requests even after the main
-// GetFeatureInfo finally-block has cleared activeGetFeatureInfoController.
-let activeTimeSeriesController = null;
+// ── Multi-point click model ───────────────────────────────────────────────
+// Users can click several sea points; each keeps its own colored popup + map
+// marker + time-series charts, all colour-matched so it's clear which popup
+// belongs to which point. Replaces the old single-popup/single-marker model.
+//
+// Distinct, high-contrast colours cycled per point (wrap after the last).
+const CLICK_POINT_COLORS = ['#4fc3f7', '#ff7043', '#66bb6a', '#ab47bc', '#ffca28', '#ec407a'];
+let clickPointColorIdx = 0;
+const MAX_CLICK_POINTS = 6; // cap concurrent points (also the palette length)
+
+// Registry of live points. Key = unique id. Value = { latlng, color, marker,
+// popup, controller }. Each point owns its own AbortController so opening a new
+// point never cancels an in-flight fetch of an existing one.
+const clickPoints = new Map();
+let clickPointSeq = 0;
+
+// Remove a single point (its popup element, marker, and abort its fetches).
+function removeClickPoint(id) {
+    const pt = clickPoints.get(id);
+    if (!pt) return;
+    try { if (pt.controller) pt.controller.abort(); } catch (_) { }
+    if (pt.marker && map.hasLayer(pt.marker)) map.removeLayer(pt.marker);
+    // Popup element may have been reparented to <body> when dragged.
+    const el = pt.popup && pt.popup.getElement && pt.popup.getElement();
+    try { if (pt.popup && map.hasLayer(pt.popup)) map.closePopup(pt.popup); } catch (_) { }
+    if (el && el.parentNode) el.parentNode.removeChild(el);
+    clickPoints.delete(id);
+}
+
+// Remove every active point (used e.g. before a full reset if ever needed).
+function removeAllClickPoints() {
+    Array.from(clickPoints.keys()).forEach(removeClickPoint);
+    clickPointColorIdx = 0;
+}
+window.removeAllClickPoints = removeAllClickPoints;
 
 // Make a Leaflet popup manually draggable via its ".popup-drag-handle" header.
 //
@@ -2913,55 +2945,45 @@ function makePopupDraggable(popup) {
     handle.addEventListener('pointercancel', endDrag);
 }
 
-// Marker that pins the clicked point on the map for a draggable video-WMS popup, so it
-// stays clear which point the (possibly moved) popup refers to. Only one at a time.
-let clickPointMarker = null;
-function removeClickPointMarker() {
-    if (clickPointMarker && map.hasLayer(clickPointMarker)) {
-        map.removeLayer(clickPointMarker);
-    }
-    clickPointMarker = null;
-}
-
 // Function to fetch and display GetFeatureInfo for all active layers
 async function getFeatureInfo(latlng) {
     // Check if using multi-layer system or single layer
     const useMultiLayer = typeof activeLayers !== 'undefined' && activeLayers.size > 0;
-
-    // Clear any marker from a previous click before starting a new query.
-    removeClickPointMarker();
 
     if (!useMultiLayer && !wmsLayer) {
         console.warn('⚠️ No WMS layer active');
         return;
     }
 
-    // Cancel any previous pending request
-    if (activeGetFeatureInfoController) {
-        console.log('🛑 Cancelling previous GetFeatureInfo request');
-        activeGetFeatureInfoController.abort();
-    }
-    // Also cancel any still-running time-series chart requests from a previous click.
-    if (activeTimeSeriesController) {
-        activeTimeSeriesController.abort();
+    // Multi-point: cap the number of concurrent points. Once at the limit, drop the
+    // OLDEST point to make room (Map preserves insertion order).
+    if (clickPoints.size >= MAX_CLICK_POINTS) {
+        const oldestId = clickPoints.keys().next().value;
+        removeClickPoint(oldestId);
     }
 
-    // Create new AbortController for this request
-    activeGetFeatureInfoController = new AbortController();
-    const signal = activeGetFeatureInfoController.signal;
-    // Dedicated controller/signal for the chart requests (outlive the main finally-block).
-    activeTimeSeriesController = new AbortController();
-    const chartSignal = activeTimeSeriesController.signal;
+    // Register a new point with its own colour + abort controller. The controller is
+    // per-point, so opening another point never cancels this one's in-flight fetches.
+    const pointId = `cp-${++clickPointSeq}`;
+    const color = CLICK_POINT_COLORS[clickPointColorIdx % CLICK_POINT_COLORS.length];
+    clickPointColorIdx++;
+    const controller = new AbortController();
+    const signal = controller.signal;
+    const chartSignal = signal; // one controller covers this point's main + chart fetches
 
     // Show loading popup. maxWidth raised so the 340px chart content fits without Leaflet
-    // clamping it to its default 300px and forcing a horizontal scrollbar.
-    const loadingPopup = L.popup({ maxWidth: 380 })
+    // clamping it to its default 300px and forcing a horizontal scrollbar. autoClose/
+    // closeOnClick false so multiple point popups can stay open at once.
+    const loadingPopup = L.popup({ maxWidth: 380, autoClose: false, closeOnClick: false })
         .setLatLng(latlng)
         .setContent('<i class="fa-solid fa-spinner fa-spin"></i> Loading data...')
         .openOn(map);
 
-    // When this popup closes (× button, new click, or Esc), drop its point marker.
-    loadingPopup.on('remove', removeClickPointMarker);
+    // Track this point. Marker is added later (only for video-chart clicks).
+    clickPoints.set(pointId, { latlng, color, marker: null, popup: loadingPopup, controller });
+
+    // When this popup closes (× button or Esc), remove ONLY this point.
+    loadingPopup.on('remove', () => removeClickPoint(pointId));
 
     try {
         // Get map pixel coordinates
@@ -3018,11 +3040,13 @@ async function getFeatureInfo(latlng) {
         // width:340px fixed + box-sizing so the responsive chart (width:100%) fits exactly
         // inside without triggering a horizontal scrollbar. overflow-x:hidden as a safety net.
         let content = '<div style="width: 340px; max-width: 340px; max-height: 500px; overflow-y: auto; overflow-x: hidden; box-sizing: border-box;">';
-        content += `<div style="margin-bottom:8px; font-size:12px;">`;
-        content += `<span style="font-weight:600; color:#4fc3f7;">Lat:</span> `;
-        content += `<span style="color:#ffffff; font-weight:700;">${latlng.lat.toFixed(6)}</span> `;
-        content += `<span style="font-weight:600; color:#4fc3f7; margin-left:10px;">Lon:</span> `;
-        content += `<span style="color:#ffffff; font-weight:700;">${latlng.lng.toFixed(6)}</span>`;
+        content += `<div style="display:flex; align-items:center; margin-bottom:8px; font-size:12px;">`;
+        // Colour swatch that matches this point's map marker + chart colour.
+        content += `<span style="display:inline-block; width:11px; height:11px; border-radius:50%; background:${color}; border:2px solid #ffffff; box-shadow:0 0 0 1px rgba(0,0,0,.3); margin-right:8px; flex:0 0 auto;"></span>`;
+        content += `<span style="font-weight:600; color:${color};">Lat:</span> `;
+        content += `<span style="color:#ffffff; font-weight:700;">&nbsp;${latlng.lat.toFixed(4)}</span> `;
+        content += `<span style="font-weight:600; color:${color}; margin-left:10px;">Lon:</span> `;
+        content += `<span style="color:#ffffff; font-weight:700;">&nbsp;${latlng.lng.toFixed(4)}</span>`;
         content += `</div>`;
         content += '<div style="border-top: 1px solid #2d3548; margin: 6px 0 10px 0;"></div>';
 
@@ -3052,18 +3076,20 @@ async function getFeatureInfo(latlng) {
         }
 
         // For video-WMS clicks the popup is draggable and can be moved away from the
-        // clicked point, so drop a marker on the map to keep the source point clear.
+        // clicked point, so drop a colour-matched marker on the map to keep the source
+        // point clear. Colour matches this point's popup swatch + charts.
         if (videoLayersToChart.length > 0) {
-            removeClickPointMarker();
-            clickPointMarker = L.circleMarker(latlng, {
+            const marker = L.circleMarker(latlng, {
                 radius: 6,
                 color: '#ffffff',
                 weight: 2,
-                fillColor: '#4fc3f7',
-                fillOpacity: 0.9,
+                fillColor: color,
+                fillOpacity: 0.95,
                 interactive: false,
                 pane: 'markerPane'
             }).addTo(map);
+            const pt = clickPoints.get(pointId);
+            if (pt) pt.marker = marker; else map.removeLayer(marker); // point already closed
         }
 
         // Fetch the 16-day time-series for each video layer BEFORE building the final popup,
@@ -3085,7 +3111,7 @@ async function getFeatureInfo(latlng) {
             seriesResults.forEach(({ v, series, error }) => {
                 chartsHtml += `<div class="ts-chart-slot" data-layer-id="${v.layerId}" style="margin-bottom:10px;">`;
                 if (series) {
-                    chartsHtml += renderTimeSeriesSVG(series, { title: `${v.layerName} — water level`, unit: 'm' });
+                    chartsHtml += renderTimeSeriesSVG(series, { title: `${v.layerName} — water level`, unit: 'm', color });
                 } else if (error && error.name === 'AbortError') {
                     chartsHtml += ''; // superseded by a newer click — leave empty
                 } else {
@@ -3165,7 +3191,7 @@ async function getFeatureInfo(latlng) {
         makePopupDraggable(loadingPopup);
 
     } catch (error) {
-        // Check if request was aborted
+        // Check if request was aborted (this point was closed / evicted mid-fetch).
         if (error.name === 'AbortError') {
             console.log('ℹ️ GetFeatureInfo request cancelled');
             return;
@@ -3180,9 +3206,10 @@ async function getFeatureInfo(latlng) {
             errorMsg = 'Network error - check proxy';
         }
 
-        loadingPopup.setContent(`<span style="color: #FF6B6B;">Error: ${errorMsg}</span>`);
-    } finally {
-        activeGetFeatureInfoController = null;
+        // Only update the popup if this point is still open.
+        if (clickPoints.has(pointId)) {
+            loadingPopup.setContent(`<span style="color: #FF6B6B;">Error: ${errorMsg}</span>`);
+        }
     }
 }
 
@@ -3332,6 +3359,8 @@ function renderTimeSeriesSVG(series, opts = {}) {
 
     const unit = opts.unit || 'm';
     const title = opts.title || 'Water level forecast';
+    // Per-point accent colour (line, dots, title, cursor). Falls back to the theme cyan.
+    const color = opts.color || '#4fc3f7';
 
     // Y scale from data with a little headroom.
     let yMin = Math.min(...valued.map(p => p.value));
@@ -3380,7 +3409,7 @@ function renderTimeSeriesSVG(series, opts = {}) {
     series.forEach((p, i) => {
         if (p.value === null || !Number.isFinite(p.value)) return;
         dots += `<circle class="ts-dot" cx="${xFor(i).toFixed(1)}" cy="${yFor(p.value).toFixed(1)}" r="2.5" `
-            + `fill="#4fc3f7" data-date="${p.dateLabel}" data-value="${p.value.toFixed(3)}"/>`;
+            + `fill="${color}" data-date="${p.dateLabel}" data-value="${p.value.toFixed(3)}"/>`;
     });
 
     // Invisible hover markers spanning the full plot height for easier mouseover.
@@ -3388,18 +3417,18 @@ function renderTimeSeriesSVG(series, opts = {}) {
     series.forEach((p, i) => {
         if (p.value === null || !Number.isFinite(p.value)) return;
         hitAreas += `<circle class="ts-hit" cx="${xFor(i).toFixed(1)}" cy="${yFor(p.value).toFixed(1)}" r="10" `
-            + `fill="transparent" data-date="${p.dateLabel}" data-value="${p.value.toFixed(3)}" data-unit="${unit}"/>`;
+            + `fill="transparent" data-date="${p.dateLabel}" data-value="${p.value.toFixed(3)}" data-unit="${unit}" data-color="${color}"/>`;
     });
 
     return `
       <div class="ts-chart-wrap" style="position:relative; width:100%; max-width:100%; box-sizing:border-box;">
-        <div style="font-size:12px; font-weight:600; color:#4fc3f7; margin-bottom:4px;">${title}</div>
+        <div style="font-size:12px; font-weight:600; color:${color}; margin-bottom:4px;">${title}</div>
         <svg class="ts-chart" viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet" style="display:block; width:100%; height:auto; background:#141a2b; border-radius:6px;">
           ${grid}
-          <path d="${path.trim()}" fill="none" stroke="#4fc3f7" stroke-width="1.75" stroke-linejoin="round" stroke-linecap="round"/>
+          <path d="${path.trim()}" fill="none" stroke="${color}" stroke-width="1.75" stroke-linejoin="round" stroke-linecap="round"/>
           ${dots}
           ${xLabels}
-          <line class="ts-cursor" x1="0" y1="${padT}" x2="0" y2="${padT + plotH}" stroke="#4fc3f7" stroke-width="1" stroke-dasharray="3,3" style="opacity:0;"/>
+          <line class="ts-cursor" x1="0" y1="${padT}" x2="0" y2="${padT + plotH}" stroke="${color}" stroke-width="1" stroke-dasharray="3,3" style="opacity:0;"/>
           ${hitAreas}
         </svg>
         <div class="ts-tooltip" style="position:absolute; pointer-events:none; background:#0d1220; border:1px solid #2d3548; border-radius:5px; padding:4px 7px; font-size:11px; color:#fff; white-space:nowrap; opacity:0; transform:translate(-50%,-140%); transition:opacity .08s;"></div>
@@ -3427,7 +3456,8 @@ function attachTimeSeriesHover(containerEl) {
         const date = hit.getAttribute('data-date');
         const value = hit.getAttribute('data-value');
         const unit = hit.getAttribute('data-unit') || '';
-        tooltip.innerHTML = `<span style="color:#8f9bb3;">${date}</span> &nbsp;<strong style="color:#4fc3f7;">${value} ${unit}</strong>`;
+        const color = hit.getAttribute('data-color') || '#4fc3f7';
+        tooltip.innerHTML = `<span style="color:#8f9bb3;">${date}</span> &nbsp;<strong style="color:${color};">${value} ${unit}</strong>`;
         // SVG is scaled to the popup width via viewBox, so convert the point's viewBox
         // coords to the rendered pixel position (relative to the wrap) for the tooltip.
         const rect = svg.getBoundingClientRect();
