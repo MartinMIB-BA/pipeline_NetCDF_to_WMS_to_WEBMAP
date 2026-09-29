@@ -171,28 +171,26 @@ In the GUI:
 
 ---
 
-## Step 8 — Lock down the admin port (recommended)
+## Step 8 — Lock down the admin port
 
-`ufw` is inactive, so port 81 is currently public. Restrict it to your IP (or
-close it entirely and use an SSH tunnel when you need the GUI):
+The admin GUI (port 81) must not be exposed to the internet. **`ufw` does not
+work for this** — Docker publishes ports via its own iptables DNAT rules that
+run before ufw, so a `ufw allow from <ip> to any port 81` rule is silently
+bypassed and 81 stays world-reachable.
 
-```bash
-# option A: only allow your workstation IP to reach 81
-sudo ufw allow 22/tcp
-sudo ufw allow 80/tcp
-sudo ufw allow 443/tcp
-sudo ufw allow 8082/tcp
-sudo ufw allow from YOUR.IP.ADDR.ESS to any port 81 proto tcp
-sudo ufw enable
-```
-
-Or, without enabling ufw, reach the GUI via an SSH tunnel and keep 81 firewalled
-at the provider level:
+The reliable fix is already baked into `docker/npm/docker-compose.yml`: port 81
+is bound to **loopback only** (`127.0.0.1:81:81`), so it is never published on
+the public interface. Reach the GUI through an SSH tunnel:
 
 ```bash
 ssh -L 8181:localhost:81 ubuntu@89.47.190.54
 # then browse http://localhost:8181
 ```
+
+> Ports 80/443/8082 stay public (that's the point — the viewer is public). Only
+> the admin GUI is restricted. If you ever need to expose 81 to a fixed IP
+> instead of loopback, do it in `DOCKER-USER` iptables (not plain ufw) and make
+> it persistent.
 
 ---
 
