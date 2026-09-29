@@ -1116,6 +1116,20 @@
         }
 
         /* ── GetFeatureInfo Popup ── */
+        /* The popup is draggable by its body (like the static widgets). Once the user
+           moves it, it detaches from its map anchor, so hide the pointer tip. */
+        .leaflet-popup.popup-user-positioned .leaflet-popup-tip-container {
+            display: none;
+        }
+
+        /* While actively dragging, suppress text selection so grabbing the popup body
+           doesn't highlight its text. Selection is still allowed when not dragging. */
+        .leaflet-popup.popup-dragging,
+        .leaflet-popup.popup-dragging * {
+            user-select: none !important;
+            -webkit-user-select: none !important;
+        }
+
         .leaflet-popup-content-wrapper {
             background: var(--glass-bg) !important;
             backdrop-filter: var(--glass-blur) !important;
@@ -1123,6 +1137,7 @@
             border: 1px solid var(--glass-border) !important;
             border-radius: 16px !important;
             box-shadow: 0 8px 40px rgba(0, 0, 0, 0.5) !important;
+            touch-action: none;
         }
 
         .leaflet-popup-content {
@@ -1140,6 +1155,16 @@
             color: var(--text-dim) !important;
             font-size: 20px !important;
             padding: 4px 8px !important;
+        }
+
+        /* After the popup is lifted out of the map, keep the close "×" visible and on
+           top so it stays clickable in its detached, dragged state. */
+        .leaflet-popup.popup-user-positioned .leaflet-popup-close-button {
+            display: block !important;
+            position: absolute !important;
+            top: 0 !important;
+            right: 0 !important;
+            z-index: 2 !important;
         }
 
         .leaflet-popup-close-button:hover {

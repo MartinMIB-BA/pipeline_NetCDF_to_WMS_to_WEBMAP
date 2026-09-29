@@ -86,9 +86,16 @@ Services started:
 | GeoServer | 8080 | WMS / WCS server |
 | PostgreSQL | 5432 | PostGIS database |
 | PgBouncer | 6432 | Connection pooler |
-| Nginx | 80 | Reverse proxy + tile cache |
-| Nginx | 443 | HTTPS (Let's Encrypt) |
-| Nginx | 8082 | Staging environment |
+| Nginx (`web`) | 8082 | Staging environment (direct); prod served via NPM |
+| Nginx Proxy Manager | 80, 443 | Edge reverse proxy + Let's Encrypt SSL |
+| Nginx Proxy Manager | 81 | Admin GUI |
+
+> Public HTTP/HTTPS (ports 80/443) is terminated by **Nginx Proxy Manager**
+> (`docker/npm/`), which proxies `metron.duckdns.org` to the `web` container
+> over the shared `edge` network. The `web` container no longer publishes
+> 80/443 itself. SSL certificates are issued via Let's Encrypt DNS-01 challenge
+> using the DuckDNS provider, managed in the NPM admin GUI. See
+> [`docker/README.md`](docker/README.md#nginx-proxy-manager-edge-proxy--ssl).
 
 ### 2 — Set up the Python pipeline
 

@@ -64,7 +64,10 @@ window.addEventListener('beforeunload', () => {
 const map = L.map('map', {
     preferCanvas: true,
     zoomControl: true,
-    minZoom: 2            // PREVENT REPEATED WORLDS: Keep zoom level high enough
+    minZoom: 2,           // PREVENT REPEATED WORLDS: Keep zoom level high enough
+    // Allow several GetFeatureInfo popups to stay open at once (multi-point charts).
+    // Without this, a map click / new popup would auto-close the previous one.
+    closePopupOnClick: false
 }).setView([45.0, 15.0], 4);
 
 // Basemap configuration + switcher
@@ -186,6 +189,14 @@ if (!map.getPane('animWmsPane')) {
     map.createPane('animWmsPane');
     map.getPane('animWmsPane').style.zIndex = 450;
     map.getPane('animWmsPane').style.pointerEvents = 'none';
+}
+// overlayWmsPane (z=460) → non-video overlay layers (summary/static/points/choropleth).
+// Sits ABOVE animWmsPane (450) so a video day-swap (which shows a frame instance at 450)
+// covers only the video's OWN base layer (350), never an overlay the user stacked on top.
+if (!map.getPane('overlayWmsPane')) {
+    map.createPane('overlayWmsPane');
+    map.getPane('overlayWmsPane').style.zIndex = 460;
+    map.getPane('overlayWmsPane').style.pointerEvents = 'none';
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -363,6 +374,7 @@ function printPerformanceSummary() {
 let animationTimer = null;
 window.isAnimating = false;
 window.isAnimationLoading = false; // Add missing flag to window
+window.isBackgroundWarming = false; // Idle non-seeded frame warm-up (NOT a running animation)
 let isAnimationBusy = false; // Lock to prevent overlapping frame transitions
 let animationSpeed = 500; // milliseconds per frame (0.5 second local)
 // Debounce timer for auto-preload on rapid date/hour switching
@@ -1224,6 +1236,69 @@ window.preloadSingleFrame = async function (layerId, elevation) {
     return preloadPromise;
 };
 
+// After a zoom, re-assert the day the user actually has selected (layerData.elevation)
+// instead of letting the layer snap back to day 0. Zoom tears down the animation-frame
+// instances (zoomstart) and evicts their cache entries for the old zoom (zoomend), and
+// the re-preload path always front-loads frame 0 — so without this the visible frame
+// (or the base WMS layer's elevation) drops to 0. This is the idle-state analogue of the
+// "instant cache-hit swap" in multi-layer.js: show the cached frame for the selected day
+// if present, otherwise pin the base WMS layer to that elevation so it renders on the fly.
+window.restoreVideoFrameForZoom = function (layerId, layerData) {
+    // Only bail for a genuinely RUNNING animation (isAnimating) — the animation loop owns
+    // the frames then. Do NOT bail on isAnimationLoading/isBackgroundWarming: those are idle
+    // preload/warm states where the user's selected day must still be re-asserted. (Previously
+    // bailing on isAnimationLoading was why this fix intermittently did nothing.)
+    if (window.isAnimating) return;
+    if (!layerData || !layerData.metadata || layerData.metadata.type !== 'video') return;
+    if (layerData.hidden) return;
+
+    const selectedDay = layerData.elevation || 0;
+    const zoom = Math.round(map.getZoom());
+    const fixedZoom = (GWC_LAYERS.includes(layerId) && zoom >= 6) ? 6 : zoom;
+    const cacheKey = `${layerId}-${selectedDay}-${fixedZoom}`;
+    const cachedFrame = window.animationCache && window.animationCache[cacheKey];
+
+    if (cachedFrame) {
+        // Cache hit: hide every other frame instance and show the selected day on top.
+        Object.values(window.animationCache).forEach(layer => {
+            if (layer && layer !== cachedFrame && window.map && window.map.hasLayer(layer)) {
+                layer.setOpacity(0);
+            }
+        });
+        if (window.map && !window.map.hasLayer(cachedFrame)) {
+            cachedFrame.setOpacity(0);
+            cachedFrame.addTo(window.map);
+        }
+        cachedFrame.setOpacity(1.0);
+        cachedFrame.bringToFront();
+        console.log(`🔁 [ZOOM RESTORE] ${layerId} showing cached day ${selectedDay} @ zoom ${fixedZoom}`);
+        return;
+    }
+
+    // No cached frame for the selected day at this zoom yet. Make sure the base WMS layer
+    // renders the SELECTED day (not day 0) and is visible, so the map doesn't jump to day 0
+    // while frames warm up in the background. Any stale frame instances stay hidden.
+    if (window.animationCache) {
+        Object.values(window.animationCache).forEach(layer => {
+            if (layer && window.map && window.map.hasLayer(layer)) layer.setOpacity(0);
+        });
+    }
+    if (layerData.wmsLayer) {
+        const currentElev = layerData.wmsLayer.wmsParams && layerData.wmsLayer.wmsParams.elevation;
+        // Always set the param AND force a redraw. Only comparing the param string and
+        // skipping the redraw let the base layer keep painting stale day-0 tiles after being
+        // uncovered (param said 6 but on-screen tiles were still 0, and day 0 renders fine so
+        // no 400 → no "No data" banner ever appeared). Force the redraw so tiles match the day.
+        layerData.wmsLayer.setParams({ elevation: selectedDay }, false);
+        layerData.wmsLayer.setOpacity(1.0);
+        if (window.map && !window.map.hasLayer(layerData.wmsLayer)) {
+            layerData.wmsLayer.addTo(window.map);
+        }
+        layerData.wmsLayer.redraw();
+        console.log(`🔁 [ZOOM RESTORE] ${layerId} base layer pinned to day ${selectedDay} (elev was ${currentElev}) @ zoom ${fixedZoom}`);
+    }
+};
+
 async function preloadFrame(day, updateProgress = null, zoomLevel = null) {
     // Use current zoom if not specified
     if (zoomLevel === null) {
@@ -1502,18 +1577,27 @@ async function preloadAllFrames(forceAllFrames = false) {
             playBtn.innerHTML = originalText;
             console.timeEnd('⏱️ Total preload time');
 
-            // Background warm-up: 2 frames per 400ms — doesn't block UI, can be cancelled by date change
+            // Background warm-up: 2 frames per 400ms — doesn't block UI, can be cancelled by date change.
+            // Uses a DEDICATED flag (isBackgroundWarming), NOT isAnimationLoading: this loop runs
+            // AFTER preloadAllFrames returns and autoPreloadVideoLayer clears isAnimationLoading, so
+            // if it kept isAnimationLoading true it would make zoomstart's stopAnimation() check and
+            // restoreVideoFrameForZoom's guard treat idle warm-up as "animating" → the day resets to 0.
             const layerSnapshot = currentParams.layer;
             const timeSnapshot = currentParams.time;
+            window.isBackgroundWarming = true;
             (async () => {
-                for (let i = 1; i < totalFrames; i += 2) {
-                    // Stop if date/layer changed or animation started
-                    if (currentParams.layer !== layerSnapshot || currentParams.time !== timeSnapshot
-                            || window.isAnimating || window.isAnimationLoading) break;
-                    const batch = [preloadFrame(i, null, currentZoom)];
-                    if (i + 1 < totalFrames) batch.push(preloadFrame(i + 1, null, currentZoom));
-                    await Promise.all(batch);
-                    await new Promise(r => setTimeout(r, 400));
+                try {
+                    for (let i = 1; i < totalFrames; i += 2) {
+                        // Stop if date/layer changed or animation started
+                        if (currentParams.layer !== layerSnapshot || currentParams.time !== timeSnapshot
+                                || window.isAnimating || window.isAnimationLoading) break;
+                        const batch = [preloadFrame(i, null, currentZoom)];
+                        if (i + 1 < totalFrames) batch.push(preloadFrame(i + 1, null, currentZoom));
+                        await Promise.all(batch);
+                        await new Promise(r => setTimeout(r, 400));
+                    }
+                } finally {
+                    window.isBackgroundWarming = false;
                 }
             })();
             return true;
@@ -1880,6 +1964,7 @@ function stopAnimation() {
     try {
         // Force immediate flag updates to stop loop
         window.isAnimationLoading = false;
+        window.isBackgroundWarming = false;
         window.isAnimating = false;
 
         if (animationTimer) {
@@ -2520,15 +2605,35 @@ L.control.scale({ imperial: false, metric: true }).addTo(map);
 map.on('zoomstart', function () {
     trackOperationStart('zoom');
 
-    if (window.isAnimating || window.isAnimationLoading) {
-        // Just STOP the animation completely. Do not try to auto-resume or reload frames.
-        // The user complained about the animation trying to aggressively reload/resume automatically.
-        console.log('🛑 Zoom detected - Stopping animation');
+    if (window.isAnimating) {
+        // A REAL animation is playing → stop it fully. stopAnimation() resets the day to 0,
+        // which is correct here because the user was watching the animation, not a pinned day.
+        console.log('🛑 Zoom detected - Stopping running animation');
         if (typeof window.stopAnimation === 'function') {
             window.stopAnimation();
         }
 
         // Clear cache and remove layers to prevent background loading
+        if (window.animationCache) {
+            Object.values(window.animationCache).forEach(layer => {
+                if (layer && window.map && window.map.hasLayer(layer)) {
+                    window.map.removeLayer(layer);
+                }
+            });
+            window.animationCache = {};
+        }
+        if (typeof window.resetPreloadStatus === 'function') {
+            window.resetPreloadStatus();
+        }
+    } else if (window.isAnimationLoading || window.isBackgroundWarming) {
+        // Only an IDLE preload/warm-up is in flight (NOT a user-started animation). Cancel it
+        // WITHOUT calling stopAnimation() — stopAnimation zeroes the selected day, which is the
+        // root cause of the intermittent "zoom jumps to day 0". Just abort the preload and drop
+        // the invisible frame instances; the user's selected day (layerData.elevation) is kept
+        // and re-asserted by restoreVideoFrameForZoom in zoomend.
+        console.log('🧊 Zoom detected during idle preload — cancelling preload, keeping selected day');
+        window.isAnimationLoading = false;
+        window.isBackgroundWarming = false;
         if (window.animationCache) {
             Object.values(window.animationCache).forEach(layer => {
                 if (layer && window.map && window.map.hasLayer(layer)) {
@@ -2584,10 +2689,41 @@ map.on('zoomend', function () {
         setTimeout(() => {
             if (!window.isAnimating && currentParams.layer) {
                 console.log('🔥 [PRE-WARM] Preloading current frame for new zoom level');
-                window.preloadSingleFrame(currentParams.layer, currentParams.elevation);
+                // Pre-warm each active VIDEO layer at ITS OWN selected day (layerData.elevation),
+                // not currentParams.elevation. currentParams.elevation only tracks whichever layer
+                // is "current" and can be 0/stale (e.g. after a stop or when the user scrubbed a
+                // different active video layer), which would pre-warm a day-0 frame and let it
+                // surface on top. Fall back to currentParams only for the single-layer legacy path.
+                let prewarmedVideo = false;
+                if (window.activeLayers) {
+                    window.activeLayers.forEach((layerData, layerId) => {
+                        if (layerData.metadata && layerData.metadata.type === 'video'
+                                && GWC_LAYERS.includes(layerId) && !layerData.hidden) {
+                            prewarmedVideo = true;
+                            window.preloadSingleFrame(layerId, layerData.elevation || 0);
+                        }
+                    });
+                }
+                if (!prewarmedVideo) {
+                    window.preloadSingleFrame(currentParams.layer, currentParams.elevation);
+                }
             }
             console.log('✅ WMS layer refreshed for zoom level', newZoom);
         }, 100);
+    }
+
+    // Re-assert the user's selected day for every video layer IMMEDIATELY after zoom.
+    // zoomstart removed the frame instances and zoomend evicted the old-zoom cache, so
+    // without this the layer visibly snaps to day 0 before (or instead of) the re-preload
+    // repaints the correct day. Runs before the 400ms preload kick-off below.
+    // Guard on isAnimating only (a running animation owns the frames); background warm/idle
+    // preload must NOT block the restore.
+    if (!window.isAnimating && window.activeLayers && window.restoreVideoFrameForZoom) {
+        window.activeLayers.forEach((layerData, layerId) => {
+            if (layerData.metadata && layerData.metadata.type === 'video' && GWC_LAYERS.includes(layerId)) {
+                window.restoreVideoFrameForZoom(layerId, layerData);
+            }
+        });
     }
 
     // Re-preload video frames for the new zoom so slider stays smooth after zooming.
@@ -2602,7 +2738,17 @@ map.on('zoomend', function () {
                             && GWC_LAYERS.includes(layerId)
                             && !window.isAnimating && !window.isAnimationLoading) {
                         console.log(`🔄 [ZOOM ${roundedNew}] Re-preloading ${layerId} — ${strategy}`);
-                        window.autoPreloadVideoLayer(layerId);
+                        // autoPreloadVideoLayer front-loads day 0 (opacity 0) and may leave a
+                        // day-0 instance on top. Chain the restore to its completion (not a
+                        // fixed timeout) so the user's selected day always ends up visible,
+                        // regardless of how long the preload took.
+                        Promise.resolve(window.autoPreloadVideoLayer(layerId)).finally(() => {
+                            if (!window.isAnimating
+                                    && window.restoreVideoFrameForZoom
+                                    && window.activeLayers && window.activeLayers.has(layerId)) {
+                                window.restoreVideoFrameForZoom(layerId, window.activeLayers.get(layerId));
+                            }
+                        });
                     }
                 });
             }
@@ -2613,8 +2759,191 @@ map.on('zoomend', function () {
 // ═══════════════════════════════════════════════════════════════
 // GET FEATURE INFO - CLICK TO VIEW DATA
 // ═══════════════════════════════════════════════════════════════
-// Track active GetFeatureInfo request to allow cancellation
-let activeGetFeatureInfoController = null;
+// ── Multi-point click model ───────────────────────────────────────────────
+// Users can click several sea points; each keeps its own colored popup + map
+// marker + time-series charts, all colour-matched so it's clear which popup
+// belongs to which point. Replaces the old single-popup/single-marker model.
+//
+// Distinct, high-contrast colours cycled per point (wrap after the last).
+const CLICK_POINT_COLORS = ['#4fc3f7', '#ff7043', '#66bb6a', '#ab47bc', '#ffca28', '#ec407a'];
+let clickPointColorIdx = 0;
+const MAX_CLICK_POINTS = 6; // cap concurrent points (also the palette length)
+
+// Registry of live points. Key = unique id. Value = { latlng, color, marker,
+// popup, controller }. Each point owns its own AbortController so opening a new
+// point never cancels an in-flight fetch of an existing one.
+const clickPoints = new Map();
+let clickPointSeq = 0;
+
+// Remove a single point (its popup element, marker, and abort its fetches).
+function removeClickPoint(id) {
+    const pt = clickPoints.get(id);
+    if (!pt) return;
+    try { if (pt.controller) pt.controller.abort(); } catch (_) { }
+    if (pt.marker && map.hasLayer(pt.marker)) map.removeLayer(pt.marker);
+    // Popup element may have been reparented to <body> when dragged.
+    const el = pt.popup && pt.popup.getElement && pt.popup.getElement();
+    try { if (pt.popup && map.hasLayer(pt.popup)) map.closePopup(pt.popup); } catch (_) { }
+    if (el && el.parentNode) el.parentNode.removeChild(el);
+    clickPoints.delete(id);
+}
+
+// Remove every active point (used e.g. before a full reset if ever needed).
+function removeAllClickPoints() {
+    Array.from(clickPoints.keys()).forEach(removeClickPoint);
+    clickPointColorIdx = 0;
+}
+window.removeAllClickPoints = removeAllClickPoints;
+
+// Make a Leaflet popup manually draggable via its ".popup-drag-handle" header.
+//
+// Make a Leaflet popup draggable by grabbing its body, like the static widgets.
+//
+// Why this needs to move the element out of the map: the popup lives inside
+// `.leaflet-map-pane`, which itself has a CSS `transform`. A `position: fixed` child of
+// a transformed ancestor is positioned relative to THAT ancestor, not the viewport — so
+// setting fixed + left/top on the in-map popup made it jump wildly. The fix is to lift
+// the popup element into `document.body` on first drag; there `position: fixed` behaves
+// against the viewport (exactly like the other floating panels).
+//
+// We capture the popup's real on-screen rect (via getBoundingClientRect, which already
+// includes Leaflet's transform + centering margin) BEFORE moving it, then pin it there.
+//
+// Not persisted per instance: a new click builds a new popup that reopens on the point.
+function makePopupDraggable(popup) {
+    const popupEl = popup && popup.getElement();
+    if (!popupEl) return;
+    if (popupEl.dataset.dragBound === '1') return;
+    popupEl.dataset.dragBound = '1';
+
+    // Grab anywhere on the popup body except interactive/scrollable bits.
+    const handle = popupEl.querySelector('.leaflet-popup-content-wrapper') || popupEl;
+    handle.style.cursor = 'grab';
+
+    // Once we lift the popup out of the map (below), Leaflet's own close-button click
+    // wiring can stop closing it. Bind an explicit close so the "×" always works.
+    const closeBtn = popupEl.querySelector('.leaflet-popup-close-button');
+    if (closeBtn) {
+        closeBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            if (typeof map !== 'undefined' && map.closePopup) {
+                map.closePopup(popup);
+            } else if (popup.remove) {
+                popup.remove();
+            }
+            // If the element was reparented to <body>, remove it directly as a fallback.
+            if (popupEl.parentNode === document.body) popupEl.remove();
+        });
+    }
+
+    let startX = 0, startY = 0;
+    let curLeft = 0, curTop = 0;
+    let dragging = false, pending = false;
+    const THRESHOLD = 4;
+
+    handle.addEventListener('pointerdown', (e) => {
+        // Don't start a drag from the close button, links, or the chart hover targets.
+        if (e.target.closest('a, button, .leaflet-popup-close-button, .ts-hit, svg')) return;
+
+        pending = true;
+        dragging = false;
+        startX = e.clientX;
+        startY = e.clientY;
+
+        // Suppress the browser's default text selection that a press-drag on the body
+        // would otherwise start (highlighting the popup text).
+        e.preventDefault();
+
+        handle.setPointerCapture(e.pointerId);
+    });
+
+    handle.addEventListener('pointermove', (e) => {
+        if (!pending && !dragging) return;
+
+        const dx = e.clientX - startX;
+        const dy = e.clientY - startY;
+
+        if (!dragging) {
+            if (Math.abs(dx) < THRESHOLD && Math.abs(dy) < THRESHOLD) return;
+            dragging = true;
+            pending = false;
+
+            // 1) Capture the popup's true viewport position WHILE it's still anchored
+            //    inside the map (rect already reflects Leaflet's transform + margins).
+            const rect = popupEl.getBoundingClientRect();
+            curLeft = rect.left;
+            curTop = rect.top;
+
+            // 2) Lift the element out of the transformed map pane into <body> so that
+            //    position:fixed is resolved against the viewport, then pin it in place.
+            popupEl.classList.add('popup-user-positioned');
+            popupEl.style.position = 'fixed';
+            popupEl.style.margin = '0';
+            popupEl.style.transform = 'none';
+            popupEl.style.bottom = 'auto';
+            popupEl.style.right = 'auto';
+            popupEl.style.zIndex = '10000';
+            popupEl.style.left = curLeft + 'px';
+            popupEl.style.top = curTop + 'px';
+            document.body.appendChild(popupEl);
+
+            // Stop Leaflet from repositioning this popup on zoom/pan. openOn(map) bound
+            // the popup's ORIGINAL _animateZoom/_updatePosition as map listeners (by
+            // reference), so overriding those methods on the instance does nothing — the
+            // map still calls the originals, which rewrite a transform on our container
+            // (now in <body>, position:fixed) and make it fly during zoom. The correct
+            // fix is to actually UNBIND those map listeners via the popup's own event map.
+            try {
+                if (typeof popup.getEvents === 'function') {
+                    map.off(popup.getEvents(), popup);
+                }
+            } catch (_) { }
+            // Also drop the zoom-animation class/flag so it no longer participates in
+            // Leaflet's transform-based zoom animation styling.
+            popupEl.classList.remove('leaflet-zoom-animated');
+            popup._zoomAnimated = false;
+
+            popupEl.classList.add('popup-dragging');
+            // Clear any selection the press may have already started.
+            const sel = window.getSelection && window.getSelection();
+            if (sel && sel.removeAllRanges) sel.removeAllRanges();
+            handle.style.cursor = 'grabbing';
+        }
+
+        e.preventDefault();
+
+        let newLeft = curLeft + dx;
+        let newTop = curTop + dy;
+
+        // Keep the popup within the viewport.
+        const w = popupEl.offsetWidth;
+        const h = popupEl.offsetHeight;
+        if (newLeft < 0) newLeft = 0;
+        if (newTop < 0) newTop = 0;
+        if (newLeft + w > window.innerWidth) newLeft = window.innerWidth - w;
+        if (newTop + h > window.innerHeight) newTop = window.innerHeight - h;
+
+        popupEl.style.left = newLeft + 'px';
+        popupEl.style.top = newTop + 'px';
+    });
+
+    const endDrag = (e) => {
+        // Commit the current position as the new baseline so the next drag continues
+        // from here instead of snapping back to the original capture point.
+        if (dragging) {
+            curLeft = parseFloat(popupEl.style.left) || curLeft;
+            curTop = parseFloat(popupEl.style.top) || curTop;
+        }
+        pending = false;
+        dragging = false;
+        popupEl.classList.remove('popup-dragging');
+        handle.style.cursor = 'grab';
+        try { handle.releasePointerCapture(e.pointerId); } catch (_) { }
+    };
+    handle.addEventListener('pointerup', endDrag);
+    handle.addEventListener('pointercancel', endDrag);
+}
 
 // Function to fetch and display GetFeatureInfo for all active layers
 async function getFeatureInfo(latlng) {
@@ -2626,21 +2955,35 @@ async function getFeatureInfo(latlng) {
         return;
     }
 
-    // Cancel any previous pending request
-    if (activeGetFeatureInfoController) {
-        console.log('🛑 Cancelling previous GetFeatureInfo request');
-        activeGetFeatureInfoController.abort();
+    // Multi-point: cap the number of concurrent points. Once at the limit, drop the
+    // OLDEST point to make room (Map preserves insertion order).
+    if (clickPoints.size >= MAX_CLICK_POINTS) {
+        const oldestId = clickPoints.keys().next().value;
+        removeClickPoint(oldestId);
     }
 
-    // Create new AbortController for this request
-    activeGetFeatureInfoController = new AbortController();
-    const signal = activeGetFeatureInfoController.signal;
+    // Register a new point with its own colour + abort controller. The controller is
+    // per-point, so opening another point never cancels this one's in-flight fetches.
+    const pointId = `cp-${++clickPointSeq}`;
+    const color = CLICK_POINT_COLORS[clickPointColorIdx % CLICK_POINT_COLORS.length];
+    clickPointColorIdx++;
+    const controller = new AbortController();
+    const signal = controller.signal;
+    const chartSignal = signal; // one controller covers this point's main + chart fetches
 
-    // Show loading popup
-    const loadingPopup = L.popup()
+    // Show loading popup. maxWidth raised so the 340px chart content fits without Leaflet
+    // clamping it to its default 300px and forcing a horizontal scrollbar. autoClose/
+    // closeOnClick false so multiple point popups can stay open at once.
+    const loadingPopup = L.popup({ maxWidth: 380, autoClose: false, closeOnClick: false })
         .setLatLng(latlng)
         .setContent('<i class="fa-solid fa-spinner fa-spin"></i> Loading data...')
         .openOn(map);
+
+    // Track this point. Marker is added later (only for video-chart clicks).
+    clickPoints.set(pointId, { latlng, color, marker: null, popup: loadingPopup, controller });
+
+    // When this popup closes (× button or Esc), remove ONLY this point.
+    loadingPopup.on('remove', () => removeClickPoint(pointId));
 
     try {
         // Get map pixel coordinates
@@ -2694,21 +3037,105 @@ async function getFeatureInfo(latlng) {
         }
 
         // Build combined popup content
-        let content = '<div style="max-width: 380px; max-height: 500px; overflow-y: auto;">';
-        content += `<div style="margin-bottom:8px; font-size:12px;">`;
-        content += `<span style="font-weight:600; color:#4fc3f7;">Lat:</span> `;
-        content += `<span style="color:#ffffff; font-weight:700;">${latlng.lat.toFixed(6)}</span> `;
-        content += `<span style="font-weight:600; color:#4fc3f7; margin-left:10px;">Lon:</span> `;
-        content += `<span style="color:#ffffff; font-weight:700;">${latlng.lng.toFixed(6)}</span>`;
+        // width:340px fixed + box-sizing so the responsive chart (width:100%) fits exactly
+        // inside without triggering a horizontal scrollbar. overflow-x:hidden as a safety net.
+        let content = '<div style="width: 340px; max-width: 340px; max-height: 500px; overflow-y: auto; overflow-x: hidden; box-sizing: border-box;">';
+        content += `<div style="display:flex; align-items:center; margin-bottom:8px; font-size:12px;">`;
+        // Colour swatch that matches this point's map marker + chart colour.
+        content += `<span style="display:inline-block; width:11px; height:11px; border-radius:50%; background:${color}; border:2px solid #ffffff; box-shadow:0 0 0 1px rgba(0,0,0,.3); margin-right:8px; flex:0 0 auto;"></span>`;
+        content += `<span style="font-weight:600; color:${color};">Lat:</span> `;
+        content += `<span style="color:#ffffff; font-weight:700;">&nbsp;${latlng.lat.toFixed(4)}</span> `;
+        content += `<span style="font-weight:600; color:${color}; margin-left:10px;">Lon:</span> `;
+        content += `<span style="color:#ffffff; font-weight:700;">&nbsp;${latlng.lng.toFixed(4)}</span>`;
         content += `</div>`;
         content += '<div style="border-top: 1px solid #2d3548; margin: 6px 0 10px 0;"></div>';
 
         const layersWithData = allResults.filter(r => r.features && r.features.length > 0);
 
-        if (layersWithData.length === 0) {
-            content += '<span style="color: #8f9bb3;">No data at this location</span>';
+        // Identify active VIDEO layers at this click — they get a 16-day time-series chart
+        // prepended to the popup (day 0 = selected date). Built from activeLayers so the
+        // chart still renders even if day-0 happened to have no value at this exact point.
+        const videoLayersToChart = [];
+        if (useMultiLayer) {
+            for (const layerId of activeLayers.keys()) {
+                const ld = activeLayers.get(layerId);
+                const meta = ld && (ld.metadata || layerMetadata[layerId]);
+                if (ld && meta && meta.type === 'video' && !ld.hidden) {
+                    videoLayersToChart.push({ layerId, layerData: ld, layerName: (typeof layerDisplayNames !== 'undefined' ? layerDisplayNames[layerId] : null) || layerId });
+                }
+            }
         } else {
-            layersWithData.forEach((result, idx) => {
+            const meta = layerMetadata[currentParams.layer];
+            if (meta && meta.type === 'video') {
+                videoLayersToChart.push({
+                    layerId: currentParams.layer,
+                    layerData: { time: currentParams.time, elevation: currentParams.elevation, metadata: meta, wmsLayer: (window.activeLayers && window.activeLayers.get(currentParams.layer)?.wmsLayer) },
+                    layerName: (typeof layerDisplayNames !== 'undefined' ? layerDisplayNames[currentParams.layer] : null) || currentParams.layer
+                });
+            }
+        }
+
+        // For video-WMS clicks the popup is draggable and can be moved away from the
+        // clicked point, so drop a colour-matched marker on the map to keep the source
+        // point clear. Colour matches this point's popup swatch + charts.
+        if (videoLayersToChart.length > 0) {
+            const marker = L.circleMarker(latlng, {
+                radius: 6,
+                color: '#ffffff',
+                weight: 2,
+                fillColor: color,
+                fillOpacity: 0.95,
+                interactive: false,
+                pane: 'markerPane'
+            }).addTo(map);
+            const pt = clickPoints.get(pointId);
+            if (pt) pt.marker = marker; else map.removeLayer(marker); // point already closed
+        }
+
+        // Fetch the 16-day time-series for each video layer BEFORE building the final popup,
+        // then bake the chart HTML straight into the content string. Earlier this used a
+        // placeholder slot filled later via slot.innerHTML, but Leaflet re-creates the popup
+        // DOM node on setContent/update, so the innerHTML landed on a detached element while
+        // the visible popup kept showing the "Loading…" placeholder. Building the chart into
+        // the content and calling setContent ONCE avoids that stale-DOM race entirely.
+        let chartsHtml = '';
+        if (videoLayersToChart.length > 0) {
+            const seriesResults = await Promise.all(videoLayersToChart.map(async (v) => {
+                try {
+                    const series = await fetchVideoTimeSeries(v.layerId, v.layerData, latlng, chartSignal);
+                    return { v, series };
+                } catch (e) {
+                    return { v, series: null, error: e };
+                }
+            }));
+            seriesResults.forEach(({ v, series, error }) => {
+                chartsHtml += `<div class="ts-chart-slot" data-layer-id="${v.layerId}" style="margin-bottom:10px;">`;
+                if (series) {
+                    chartsHtml += renderTimeSeriesSVG(series, { title: `${v.layerName} — water level`, unit: 'm', color });
+                } else if (error && error.name === 'AbortError') {
+                    chartsHtml += ''; // superseded by a newer click — leave empty
+                } else {
+                    chartsHtml += `<div style="font-size:12px; color:#FF6B6B; padding:6px 0;">Could not load ${v.layerName} forecast.</div>`;
+                }
+                chartsHtml += `</div>`;
+            });
+            content = content.replace(
+                '<div style="border-top: 1px solid #2d3548; margin: 6px 0 10px 0;"></div>',
+                '<div style="border-top: 1px solid #2d3548; margin: 6px 0 10px 0;"></div>' + chartsHtml
+            );
+        }
+
+        // Video layers are represented by their chart above — skip their single-value row
+        // (the chart already shows the selected day's value, so "Value: X" is redundant).
+        const chartedIds = new Set(videoLayersToChart.map(v => v.layerId));
+        const nonChartResults = layersWithData.filter(r => !chartedIds.has(r.layerId));
+
+        if (nonChartResults.length === 0 && videoLayersToChart.length === 0) {
+            content += '<span style="color: #8f9bb3;">No data at this location</span>';
+        } else if (nonChartResults.length === 0) {
+            // Only video layers here — the chart(s) above carry the data; no per-day rows.
+        } else {
+            nonChartResults.forEach((result, idx) => {
                 if (idx > 0) {
                     content += '<div style="border-top: 2px solid #2d3548; margin: 14px 0;"></div>';
                 }
@@ -2749,8 +3176,22 @@ async function getFeatureInfo(latlng) {
         content += '</div>';
         loadingPopup.setContent(content);
 
+        // Charts are already in the content (baked in above). Now that the popup DOM exists,
+        // wire the hover tooltip on each rendered chart. Query the live popup element.
+        if (videoLayersToChart.length > 0) {
+            const popupEl = loadingPopup.getElement();
+            if (popupEl) {
+                popupEl.querySelectorAll('.ts-chart-slot').forEach(slot => attachTimeSeriesHover(slot));
+            }
+        }
+
+        // Make the popup manually draggable by its "Move" handle. It still opens anchored
+        // at the clicked point; the drag only applies a per-popup offset (not remembered),
+        // so a fresh click always reopens on the point.
+        makePopupDraggable(loadingPopup);
+
     } catch (error) {
-        // Check if request was aborted
+        // Check if request was aborted (this point was closed / evicted mid-fetch).
         if (error.name === 'AbortError') {
             console.log('ℹ️ GetFeatureInfo request cancelled');
             return;
@@ -2765,27 +3206,26 @@ async function getFeatureInfo(latlng) {
             errorMsg = 'Network error - check proxy';
         }
 
-        loadingPopup.setContent(`<span style="color: #FF6B6B;">Error: ${errorMsg}</span>`);
-    } finally {
-        activeGetFeatureInfoController = null;
+        // Only update the popup if this point is still open.
+        if (clickPoints.has(pointId)) {
+            loadingPopup.setContent(`<span style="color: #FF6B6B;">Error: ${errorMsg}</span>`);
+        }
     }
 }
 
-// Helper function to query a single layer
-async function queryLayer(layerId, layerData, latlng, point, size, signal) {
+// Build the GetFeatureInfo URL for a single point probe of a raster layer.
+// Extracted from queryLayer so the click-popup time-series chart can reuse the exact
+// same micro-bbox / EPSG:4326 probing logic across 16 elevation steps.
+// elevationOverride (optional) replaces layerData.elevation — used to walk days 0-15.
+function buildFeatureInfoUrl(layerId, layerData, latlng, elevationOverride) {
     const metadata = layerData.metadata || layerMetadata[layerId];
-
-    // Skip external layers (Copernicus) and GloFAS WMS layers (not on local GeoServer)
-    if (metadata && (metadata.external || metadata.wmsUrl)) {
-        return { layerId, layerName: layerDisplayNames[layerId] || layerId, features: [] };
-    }
 
     // Inherit the exact same formatting parameters from the visual layer
     const wmsParams = layerData.wmsLayer ? layerData.wmsLayer.wmsParams : {};
 
     // 🌟 THE ULTIMATE FIX FOR GEOSERVER IMAGEMOSAIC 0.0 VALUES:
-    // If the ImageMosaic lacks a NoData value in EPSG:3857, complex boundary translation 
-    // forces it to interpolate to 0. Asking directly in its native EPSG:4326 via a 
+    // If the ImageMosaic lacks a NoData value in EPSG:3857, complex boundary translation
+    // forces it to interpolate to 0. Asking directly in its native EPSG:4326 via a
     // precise micro-envelope around the exact click point correctly hits the TIFF raster values.
     // FIX #11: Apply .wrap() to the whole latlng point (not just lng) to keep lat/lng consistent
     const wrappedLatlng = latlng.wrap();
@@ -2826,87 +3266,336 @@ async function queryLayer(layerId, layerData, latlng, point, size, signal) {
         params.TIME = layerData.time;
     }
     if (metadata && metadata.hasElevation) {
-        params.ELEVATION = layerData.elevation;
+        params.ELEVATION = (elevationOverride !== undefined && elevationOverride !== null)
+            ? elevationOverride
+            : layerData.elevation;
     }
 
     const queryString = new URLSearchParams(params).toString();
     // Explicitly target the geoserver WMS endpoint to bypass GWC caching logic
-    const url = `${GEOSERVER_URL}/wms?target=geoserver&${queryString}`;
+    return `${GEOSERVER_URL}/wms?target=geoserver&${queryString}`;
+}
 
-    // Create timeout promise (5 seconds)
-    const timeoutPromise = new Promise((_, reject) => {
-        setTimeout(() => reject(new Error('Request timeout (5s)')), 5000);
-    });
+// Extract the numeric raster value (GRAY_INDEX) from a GetFeatureInfo JSON response.
+// Returns a finite number, or null when the point has no data / non-numeric value.
+function extractRasterValue(features) {
+    if (!features || features.length === 0) return null;
+    const props = features[0].properties || {};
+    // Raster layers expose the pixel value as GRAY_INDEX; fall back to first numeric prop.
+    let raw = props.GRAY_INDEX;
+    if (raw === undefined) {
+        const numericKey = Object.keys(props).find(k => typeof props[k] === 'number');
+        raw = numericKey !== undefined ? props[numericKey] : undefined;
+    }
+    const num = typeof raw === 'number' ? raw : parseFloat(raw);
+    return Number.isFinite(num) ? num : null;
+}
 
-    // Race between fetch and timeout
-    const fetchPromise = fetch(url, { signal });
-    const response = await Promise.race([fetchPromise, timeoutPromise]);
+// Fetch the 16-day time-series of raster values for a single clicked point on a VIDEO
+// layer. Fires one GetFeatureInfo per elevation (0-15) in parallel, at the layer's fixed
+// TIME. Returns a sorted array of { elevation, dateLabel, date, value|null }. Missing /
+// failed steps yield value: null so the chart can break the line cleanly.
+async function fetchVideoTimeSeries(layerId, layerData, latlng, signal) {
+    const metadata = layerData.metadata || layerMetadata[layerId];
+    if (!metadata || metadata.type !== 'video') return [];
 
-    if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    // Video layers cover days 0-15 (16 frames). Derive from metadata if available.
+    const maxElevation = 15;
+    const steps = [];
+    for (let e = 0; e <= maxElevation; e++) steps.push(e);
+
+    const fetchOne = async (elevation) => {
+        const forecast = (typeof window.forecastDateForDay === 'function')
+            ? window.forecastDateForDay(layerData.time, elevation)
+            : null;
+        const entry = {
+            elevation,
+            dateLabel: forecast ? forecast.label : `Day ${elevation}`,
+            date: forecast ? forecast.date : null,
+            value: null
+        };
+        try {
+            const url = buildFeatureInfoUrl(layerId, layerData, latlng, elevation);
+            const resp = await fetch(url, { signal });
+            if (!resp.ok) return entry;
+            const contentType = resp.headers.get('content-type') || '';
+            if (contentType.includes('json')) {
+                const data = await resp.json();
+                entry.value = extractRasterValue(data.features || []);
+            }
+        } catch (e) {
+            if (e.name === 'AbortError') throw e; // propagate cancellation
+            // otherwise leave value null for this step
+        }
+        return entry;
+    };
+
+    // 8s overall budget so a slow step can't hang the popup indefinitely.
+    const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('Time-series request timeout (8s)')), 8000));
+
+    const seriesPromise = Promise.all(steps.map(fetchOne));
+    const series = await Promise.race([seriesPromise, timeoutPromise]);
+    series.sort((a, b) => a.elevation - b.elevation);
+    return series;
+}
+window.fetchVideoTimeSeries = fetchVideoTimeSeries;
+
+// Render a compact inline SVG line chart of the 16-day time-series for the popup.
+// No external dependency. Returns an HTML string. Null values break the line (gaps).
+// The chart embeds per-point data attributes so attachTimeSeriesHover() can show a
+// tooltip on mousemove. `series` = [{ elevation, dateLabel, date, value|null }].
+function renderTimeSeriesSVG(series, opts = {}) {
+    const W = opts.width || 340;
+    const H = opts.height || 180;
+    const padL = 40, padR = 12, padT = 14, padB = 34;
+    const plotW = W - padL - padR;
+    const plotH = H - padT - padB;
+
+    const valued = series.filter(p => p.value !== null && Number.isFinite(p.value));
+    if (valued.length === 0) {
+        return `<div style="color:#8f9bb3; font-size:12px; padding:8px 0;">No time-series data at this point.</div>`;
     }
 
-    // Check response content type to handle different formats
-    const contentType = response.headers.get('content-type') || '';
-    console.log(`📦 GetFeatureInfo response type: ${contentType}`);
+    const unit = opts.unit || 'm';
+    const title = opts.title || 'Water level forecast';
+    // Per-point accent colour (line, dots, title, cursor). Falls back to the theme cyan.
+    const color = opts.color || '#4fc3f7';
 
-    let features = [];
+    // Y scale from data with a little headroom.
+    let yMin = Math.min(...valued.map(p => p.value));
+    let yMax = Math.max(...valued.map(p => p.value));
+    if (yMin === yMax) { yMin -= 0.5; yMax += 0.5; } // flat series → give it a range
+    const yPad = (yMax - yMin) * 0.12;
+    yMin -= yPad; yMax += yPad;
 
-    if (contentType.includes('application/json') || contentType.includes('application/geo+json')) {
-        // Parse JSON/GeoJSON
-        const data = await response.json();
-        features = data.features || [];
-    } else if (contentType.includes('text/xml') || contentType.includes('application/xml')) {
-        // Parse XML response
-        const xmlText = await response.text();
-        console.log('📄 Parsing XML GetFeatureInfo response');
+    const n = series.length;
+    const xFor = (i) => padL + (n === 1 ? plotW / 2 : (i / (n - 1)) * plotW);
+    const yFor = (v) => padT + plotH - ((v - yMin) / (yMax - yMin)) * plotH;
 
-        // Parse XML to extract features
-        const parser = new DOMParser();
-        const xmlDoc = parser.parseFromString(xmlText, 'text/xml');
+    // Build the polyline path, breaking on null values.
+    let path = '';
+    let penDown = false;
+    series.forEach((p, i) => {
+        if (p.value === null || !Number.isFinite(p.value)) { penDown = false; return; }
+        const cmd = penDown ? 'L' : 'M';
+        path += `${cmd}${xFor(i).toFixed(1)},${yFor(p.value).toFixed(1)} `;
+        penDown = true;
+    });
 
-        // Check for parsing errors
-        const parserError = xmlDoc.querySelector('parsererror');
-        if (parserError) {
-            console.error('❌ XML parsing error:', parserError.textContent);
-            throw new Error('Failed to parse XML response');
+    // Horizontal gridlines + Y axis labels (4 ticks).
+    let grid = '';
+    const ticks = 4;
+    for (let t = 0; t <= ticks; t++) {
+        const v = yMin + (t / ticks) * (yMax - yMin);
+        const y = yFor(v);
+        grid += `<line x1="${padL}" y1="${y.toFixed(1)}" x2="${(W - padR).toFixed(1)}" y2="${y.toFixed(1)}" stroke="#2d3548" stroke-width="1"/>`;
+        grid += `<text x="${padL - 5}" y="${(y + 3).toFixed(1)}" text-anchor="end" font-size="9" fill="#8f9bb3">${v.toFixed(2)}</text>`;
+    }
+
+    // X axis labels — thin them out so 16 dates fit (every ~3rd day + last).
+    let xLabels = '';
+    const labelEvery = Math.ceil(n / 6);
+    series.forEach((p, i) => {
+        if (i % labelEvery !== 0 && i !== n - 1) return;
+        const x = xFor(i);
+        // dateLabel is DD.MM.YYYY — show DD.MM to save space.
+        const short = (p.dateLabel || '').split('.').slice(0, 2).join('.');
+        xLabels += `<text x="${x.toFixed(1)}" y="${(H - padB + 14).toFixed(1)}" text-anchor="middle" font-size="9" fill="#8f9bb3">${short}</text>`;
+    });
+
+    // Data points (only valued ones) with embedded data-* for the hover tooltip.
+    let dots = '';
+    series.forEach((p, i) => {
+        if (p.value === null || !Number.isFinite(p.value)) return;
+        dots += `<circle class="ts-dot" cx="${xFor(i).toFixed(1)}" cy="${yFor(p.value).toFixed(1)}" r="2.5" `
+            + `fill="${color}" data-date="${p.dateLabel}" data-value="${p.value.toFixed(3)}"/>`;
+    });
+
+    // Invisible hover markers spanning the full plot height for easier mouseover.
+    let hitAreas = '';
+    series.forEach((p, i) => {
+        if (p.value === null || !Number.isFinite(p.value)) return;
+        hitAreas += `<circle class="ts-hit" cx="${xFor(i).toFixed(1)}" cy="${yFor(p.value).toFixed(1)}" r="10" `
+            + `fill="transparent" data-date="${p.dateLabel}" data-value="${p.value.toFixed(3)}" data-unit="${unit}" data-color="${color}"/>`;
+    });
+
+    return `
+      <div class="ts-chart-wrap" style="position:relative; width:100%; max-width:100%; box-sizing:border-box;">
+        <div style="font-size:12px; font-weight:600; color:${color}; margin-bottom:4px;">${title}</div>
+        <svg class="ts-chart" viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet" style="display:block; width:100%; height:auto; background:#141a2b; border-radius:6px;">
+          ${grid}
+          <path d="${path.trim()}" fill="none" stroke="${color}" stroke-width="1.75" stroke-linejoin="round" stroke-linecap="round"/>
+          ${dots}
+          ${xLabels}
+          <line class="ts-cursor" x1="0" y1="${padT}" x2="0" y2="${padT + plotH}" stroke="${color}" stroke-width="1" stroke-dasharray="3,3" style="opacity:0;"/>
+          ${hitAreas}
+        </svg>
+        <div class="ts-tooltip" style="position:absolute; pointer-events:none; background:#0d1220; border:1px solid #2d3548; border-radius:5px; padding:4px 7px; font-size:11px; color:#fff; white-space:nowrap; opacity:0; transform:translate(-50%,-140%); transition:opacity .08s;"></div>
+        <div style="font-size:10px; color:#8f9bb3; margin-top:2px; text-align:right;">Value in ${unit} · day 0 = selected date</div>
+      </div>`;
+}
+window.renderTimeSeriesSVG = renderTimeSeriesSVG;
+
+// Wire up the hover tooltip on a rendered time-series chart. Call AFTER the popup HTML
+// is in the DOM, passing the popup's container element. Uses the data-* attributes the
+// renderer embedded on .ts-hit circles.
+function attachTimeSeriesHover(containerEl) {
+    if (!containerEl) return;
+    const svg = containerEl.querySelector('svg.ts-chart');
+    const tooltip = containerEl.querySelector('.ts-tooltip');
+    const cursor = containerEl.querySelector('.ts-cursor');
+    if (!svg || !tooltip) return;
+    const hits = Array.from(svg.querySelectorAll('circle.ts-hit'));
+    const dots = Array.from(svg.querySelectorAll('circle.ts-dot'));
+    if (hits.length === 0) return;
+
+    const showFor = (hit) => {
+        const cx = parseFloat(hit.getAttribute('cx'));
+        const cy = parseFloat(hit.getAttribute('cy'));
+        const date = hit.getAttribute('data-date');
+        const value = hit.getAttribute('data-value');
+        const unit = hit.getAttribute('data-unit') || '';
+        const color = hit.getAttribute('data-color') || '#4fc3f7';
+        tooltip.innerHTML = `<span style="color:#8f9bb3;">${date}</span> &nbsp;<strong style="color:${color};">${value} ${unit}</strong>`;
+        // SVG is scaled to the popup width via viewBox, so convert the point's viewBox
+        // coords to the rendered pixel position (relative to the wrap) for the tooltip.
+        const rect = svg.getBoundingClientRect();
+        const vbW = svg.viewBox.baseVal.width || rect.width;
+        const vbH = svg.viewBox.baseVal.height || rect.height;
+        const sx = rect.width / vbW;
+        const sy = rect.height / vbH;
+        tooltip.style.left = `${(cx * sx).toFixed(1)}px`;
+        tooltip.style.top = `${(cy * sy).toFixed(1)}px`;
+        tooltip.style.opacity = '1';
+        if (cursor) { cursor.setAttribute('x1', cx); cursor.setAttribute('x2', cx); cursor.style.opacity = '0.6'; }
+        dots.forEach(d => d.setAttribute('r', d.getAttribute('cx') === hit.getAttribute('cx') ? '4' : '2.5'));
+    };
+    const hide = () => {
+        tooltip.style.opacity = '0';
+        if (cursor) cursor.style.opacity = '0';
+        dots.forEach(d => d.setAttribute('r', '2.5'));
+    };
+
+    // Track the nearest point to the pointer's X across the whole SVG.
+    svg.addEventListener('mousemove', (ev) => {
+        const rect = svg.getBoundingClientRect();
+        const scaleX = svg.viewBox.baseVal.width / rect.width;
+        const px = (ev.clientX - rect.left) * scaleX;
+        let nearest = hits[0];
+        let best = Infinity;
+        for (const h of hits) {
+            const d = Math.abs(parseFloat(h.getAttribute('cx')) - px);
+            if (d < best) { best = d; nearest = h; }
+        }
+        showFor(nearest);
+    });
+    svg.addEventListener('mouseleave', hide);
+}
+window.attachTimeSeriesHover = attachTimeSeriesHover;
+
+// Helper function to query a single layer
+async function queryLayer(layerId, layerData, latlng, point, size, signal) {
+    const metadata = layerData.metadata || layerMetadata[layerId];
+
+    // Skip external layers (Copernicus) and GloFAS WMS layers (not on local GeoServer)
+    if (metadata && (metadata.external || metadata.wmsUrl)) {
+        return { layerId, layerName: layerDisplayNames[layerId] || layerId, features: [] };
+    }
+
+    const url = buildFeatureInfoUrl(layerId, layerData, latlng);
+
+    // Hard deadline covering the WHOLE request — connect + headers + body read.
+    // The previous approach raced only the fetch() (headers) against a 5s timeout, which
+    // left `response.json()`/`response.text()` (the body read) UNBOUNDED. A single layer
+    // whose body never finished streaming would hang forever → Promise.all in
+    // getFeatureInfo never settled → the "Loading data…" popup spun indefinitely.
+    // Aborting via a dedicated controller cancels the fetch at any stage, including a
+    // stalled body. We still honour the caller's `signal` (new click aborts everything).
+    const layerController = new AbortController();
+    const deadline = setTimeout(() => layerController.abort(), 6000);
+    if (signal) {
+        if (signal.aborted) layerController.abort();
+        else signal.addEventListener('abort', () => layerController.abort(), { once: true });
+    }
+
+    let response, contentType, features = [];
+    try {
+        response = await fetch(url, { signal: layerController.signal });
+
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
         }
 
-        // Extract feature data from XML (GML format)
-        const featureMembers = xmlDoc.querySelectorAll('gml\\:featureMember, featureMember');
+        // Check response content type to handle different formats
+        contentType = response.headers.get('content-type') || '';
+        console.log(`📦 GetFeatureInfo response type: ${contentType}`);
 
-        features = Array.from(featureMembers).map(member => {
-            const properties = {};
-
-            // Get all child elements (these are the properties)
-            const children = member.children[0]?.children || [];
-
-            for (const child of children) {
-                const tagName = child.tagName.split(':').pop(); // Remove namespace prefix
-                const value = child.textContent.trim();
-
-                // Skip geometry fields (usually named 'geom', 'the_geom', 'geometry')
-                if (!tagName.toLowerCase().includes('geom')) {
-                    // Try to parse as number if possible
-                    const numValue = parseFloat(value);
-                    properties[tagName] = isNaN(numValue) ? value : numValue;
-                }
-            }
-
-            return { properties };
-        });
-
-        console.log(`✅ Extracted ${features.length} features from XML`);
-    } else {
-        // Fallback: try to parse as JSON anyway
-        console.warn('⚠️ Unexpected content type, attempting JSON parse');
-        try {
+        if (contentType.includes('application/json') || contentType.includes('application/geo+json')) {
+            // Parse JSON/GeoJSON
             const data = await response.json();
             features = data.features || [];
-        } catch (e) {
-            console.error('❌ Failed to parse response:', e);
-            throw new Error(`Unsupported response format: ${contentType}`);
+        } else if (contentType.includes('text/xml') || contentType.includes('application/xml')) {
+            // Parse XML response
+            const xmlText = await response.text();
+            console.log('📄 Parsing XML GetFeatureInfo response');
+
+            // Parse XML to extract features
+            const parser = new DOMParser();
+            const xmlDoc = parser.parseFromString(xmlText, 'text/xml');
+
+            // Check for parsing errors
+            const parserError = xmlDoc.querySelector('parsererror');
+            if (parserError) {
+                console.error('❌ XML parsing error:', parserError.textContent);
+                throw new Error('Failed to parse XML response');
+            }
+
+            // Extract feature data from XML (GML format)
+            const featureMembers = xmlDoc.querySelectorAll('gml\\:featureMember, featureMember');
+
+            features = Array.from(featureMembers).map(member => {
+                const properties = {};
+
+                // Get all child elements (these are the properties)
+                const children = member.children[0]?.children || [];
+
+                for (const child of children) {
+                    const tagName = child.tagName.split(':').pop(); // Remove namespace prefix
+                    const value = child.textContent.trim();
+
+                    // Skip geometry fields (usually named 'geom', 'the_geom', 'geometry')
+                    if (!tagName.toLowerCase().includes('geom')) {
+                        // Try to parse as number if possible
+                        const numValue = parseFloat(value);
+                        properties[tagName] = isNaN(numValue) ? value : numValue;
+                    }
+                }
+
+                return { properties };
+            });
+
+            console.log(`✅ Extracted ${features.length} features from XML`);
+        } else {
+            // Fallback: try to parse as JSON anyway
+            console.warn('⚠️ Unexpected content type, attempting JSON parse');
+            try {
+                const data = await response.json();
+                features = data.features || [];
+            } catch (e) {
+                console.error('❌ Failed to parse response:', e);
+                throw new Error(`Unsupported response format: ${contentType}`);
+            }
         }
+    } catch (err) {
+        // A timeout/new-click abort surfaces as AbortError — rebrand the deadline case as a
+        // timeout so the popup shows a useful message instead of hanging.
+        if (err.name === 'AbortError' && !(signal && signal.aborted)) {
+            throw new Error('Request timeout (6s)');
+        }
+        throw err;
+    } finally {
+        clearTimeout(deadline);
     }
 
     return {

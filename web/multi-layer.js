@@ -916,7 +916,11 @@ function addLayer(layerId) {
         minZoom: 0,
         crossOrigin: true,
         opacity: params.opacity,
-        pane: 'baseWmsPane'  // FIX: always below animation frames (animWmsPane z=450)
+        // Video base layers go in baseWmsPane (350) so their own day-swap frames (animWmsPane
+        // 450) correctly cover them. Every OTHER layer type goes in overlayWmsPane (460), ABOVE
+        // the frames, so a video day-swap can't visually hide a summary/static/points/choropleth
+        // layer the user stacked on top.
+        pane: (metadata && metadata.type === 'video') ? 'baseWmsPane' : 'overlayWmsPane'
     });
 
     wmsLayer.addTo(window.map);
@@ -1537,6 +1541,12 @@ function attachLayerControlListeners(layerId) {
                     }
                     targetLayer.setOpacity(1.0);
                     layerData.elevation = newVal;
+                    // Keep the base WMS layer's elevation in sync even though it's covered by
+                    // the frame instance. Otherwise, when a later zoom removes the frame
+                    // instance (zoomstart), the base layer is uncovered still rendering its
+                    // OLD elevation (day 0) → the map silently jumps to day 0. noRedraw=true
+                    // so no network request fires while the frame instance is on top.
+                    if (layerData.wmsLayer) layerData.wmsLayer.setParams({ elevation: newVal }, true);
                     if (window.updateLayerInfo && window.currentParams && window.currentParams.layer === layerId) {
                         window.currentParams.elevation = newVal;
                         window.updateLayerInfo();
@@ -1716,31 +1726,34 @@ window.updatePlayButtonsState = function () {
     });
 };
 
+// Helper: Calculate the real forecast date for day N of a video layer.
+// Day 0 == the selected base date (layerData.time); each elevation step == +1 day (UTC).
+// Returns { date: Date, label: 'DD.MM.YYYY' } or null if baseTimeIso is missing/invalid.
+// Shared by updateForecastDateLabel (slider) and the click-popup time-series chart (app.js).
+function forecastDateForDay(baseTimeIso, dayOffset) {
+    if (!baseTimeIso) return null;
+    try {
+        const baseDate = new Date(baseTimeIso);
+        if (isNaN(baseDate.getTime())) return null;
+        baseDate.setUTCDate(baseDate.getUTCDate() + parseInt(dayOffset));
+        const day = baseDate.getUTCDate().toString().padStart(2, '0');
+        const month = (baseDate.getUTCMonth() + 1).toString().padStart(2, '0');
+        const year = baseDate.getUTCFullYear();
+        return { date: baseDate, label: `${day}.${month}.${year}` };
+    } catch (e) {
+        console.error('Error calculating forecast date:', e);
+        return null;
+    }
+}
+window.forecastDateForDay = forecastDateForDay;
+
 // Helper: Calculate and update the dynamic date label for forecast layers
 function updateForecastDateLabel(layerId, dayOffset, baseTimeIso) {
     const dateLabel = document.getElementById(`elevation-date-${layerId}`);
     if (!dateLabel) return;
 
-    if (!baseTimeIso) {
-        dateLabel.textContent = '';
-        return;
-    }
-
-    try {
-        const baseDate = new Date(baseTimeIso);
-        // Add the day offset
-        baseDate.setUTCDate(baseDate.getUTCDate() + parseInt(dayOffset));
-
-        // Format to European date format (DD.MM.YYYY)
-        const day = baseDate.getUTCDate().toString().padStart(2, '0');
-        const month = (baseDate.getUTCMonth() + 1).toString().padStart(2, '0');
-        const year = baseDate.getUTCFullYear();
-
-        dateLabel.textContent = `${day}.${month}.${year}`;
-    } catch (e) {
-        console.error('Error calculating forecast date:', e);
-        dateLabel.textContent = '';
-    }
+    const forecast = forecastDateForDay(baseTimeIso, dayOffset);
+    dateLabel.textContent = forecast ? forecast.label : '';
 }
 window.updateForecastDateLabel = updateForecastDateLabel;
 
@@ -2198,6 +2211,10 @@ const debouncedIndividualElevationUpdate = debounce(async (layerId, newVal) => {
             targetLayer.setOpacity(1.0);
 
             layerData.elevation = newVal;
+            // Keep the covered base WMS layer's elevation in sync so a later zoom (which
+            // removes the frame instance) uncovers the base layer at the CORRECT day, not
+            // day 0. noRedraw=true → no network request while the frame instance is on top.
+            if (layerData.wmsLayer) layerData.wmsLayer.setParams({ elevation: newVal }, true);
             if (window.updateLayerInfo && window.currentParams && window.currentParams.layer === layerId) {
                 window.currentParams.elevation = newVal;
                 window.updateLayerInfo();
