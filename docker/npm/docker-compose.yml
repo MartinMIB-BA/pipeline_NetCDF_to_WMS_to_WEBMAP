@@ -1,0 +1,41 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Nginx Proxy Manager (NPM) — edge reverse proxy + Let's Encrypt SSL
+#
+# Sits IN FRONT of the existing `web` nginx container. NPM owns host ports
+# 80/443 and terminates HTTPS; it proxies metron.duckdns.org onward to the
+# `web` container over the shared `edge` docker network. The `web` container
+# keeps its tuned GWC tile-cache config untouched — it just stops publishing
+# 80/443 on the host (NPM takes them) and joins the `edge` network.
+#
+# SSL: Let's Encrypt via DNS-01 challenge using the DuckDNS provider. The
+# DuckDNS token is entered by hand in the NPM GUI (SSL Certificates screen,
+# field `dns_duckdns_token=...`). It is NEVER stored in this repo.
+#
+# Admin GUI: http://<server>:81  (default login admin@example.com / changeme —
+# change it on first login).
+#
+# Persistent state lives under /opt/geoserver/npm on the server, consistent
+# with the rest of the stack keeping state under /opt/geoserver.
+# ─────────────────────────────────────────────────────────────────────────────
+services:
+  nginx-proxy-manager:
+    image: jc21/nginx-proxy-manager:latest
+    container_name: nginx-proxy-manager
+    restart: unless-stopped
+    ports:
+      - "80:80"     # HTTP  (edge) — also used for ACME HTTP-01 fallback / redirects
+      - "443:443"   # HTTPS (edge) — TLS terminated here
+      - "81:81"     # NPM admin GUI
+    volumes:
+      - /opt/geoserver/npm/data:/data
+      - /opt/geoserver/npm/letsencrypt:/etc/letsencrypt
+    networks:
+      - edge
+
+# The `edge` network is shared with the main stack's `web` container so NPM can
+# reach it by name (proxy target: web:80). It is created out-of-band on the
+# server (docker network create edge) and referenced here as external so both
+# compose projects can attach to the same network.
+networks:
+  edge:
+    external: true

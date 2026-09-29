@@ -48,10 +48,12 @@ services:
     container_name: web
     depends_on:
       - geoserver
+    # Ports 80/443 are NOT published here anymore — Nginx Proxy Manager (see
+    # docker/npm/docker-compose.yml) owns them on the host and terminates TLS,
+    # then proxies to this container by name (web:80) over the `edge` network.
+    # 8082 (staging) stays published directly.
     ports:
-      - "80:80"
       - "8082:8082"
-      - "443:443"
     volumes:
       - /opt/geoserver/web:/usr/share/nginx/html:ro
       - /opt/geoserver/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
@@ -59,8 +61,11 @@ services:
       - /opt/geoserver/web_dev/web:/usr/share/nginx/html_dev:ro
       - /opt/geoserver/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
       - /opt/geoserver/monitoring/nginx_logs:/var/log/nginx
-      - /etc/letsencrypt:/etc/letsencrypt:ro
+      # /etc/letsencrypt mount removed — SSL is now handled by Nginx Proxy Manager.
       - /opt/geoserver/data/nginx_cache:/var/cache/nginx/gwc_cache
+    networks:
+      - default   # keeps reaching geoserver:8080, postgis, etc.
+      - edge      # reachable by Nginx Proxy Manager as `web`
     restart: unless-stopped
     
   pgbouncer:
@@ -87,3 +92,12 @@ services:
     ports:
       - "6432:5432"
     restart: unless-stopped
+
+networks:
+  # Default project network (docker_default) — postgis, geoserver, pgbouncer and
+  # web all sit here; services that don't list `networks` join it automatically.
+  default:
+  # Shared edge network with Nginx Proxy Manager (docker/npm/docker-compose.yml).
+  # Created out-of-band on the server: `docker network create edge`.
+  edge:
+    external: true

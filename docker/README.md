@@ -11,7 +11,8 @@ Main service stack for the WMS pipeline. Runs PostgreSQL/PostGIS, GeoServer, PgB
 | `postgis` | `postgis/postgis:16-3.4` | 5432 | PostgreSQL 16 + PostGIS 3.4 |
 | `geoserver` | `docker.osgeo.org/geoserver:2.27.x` | 8080 | WMS / WCS / REST API server |
 | `pgbouncer` | `edoburu/pgbouncer` | 6432 | Connection pooler (transaction mode) |
-| `web` | `nginx:alpine` | 80, 443, 8082 | Reverse proxy + tile cache + static files |
+| `web` | `nginx:alpine` | 8082 | Reverse proxy + tile cache + static files (prod fronted by NPM) |
+| `nginx-proxy-manager` | `jc21/nginx-proxy-manager` | 80, 443, 81 | Edge reverse proxy + Let's Encrypt SSL (separate compose in `npm/`) |
 
 ---
 
@@ -94,20 +95,61 @@ All data is stored outside containers on the host under `/opt/geoserver/`:
 | `/opt/geoserver/nginx/staging.conf` | `/etc/nginx/conf.d/staging.conf` | web | Nginx staging config |
 | `/opt/geoserver/nginx/nginx.conf` | `/etc/nginx/nginx.conf` | web | Nginx main config |
 | `/opt/geoserver/monitoring/nginx_logs` | `/var/log/nginx` | web | Nginx access logs (consumed by Promtail) |
-| `/etc/letsencrypt` | `/etc/letsencrypt` | web | SSL certificates |
 | `/opt/geoserver/data/nginx_cache` | `/var/cache/nginx/gwc_cache` | web | GWC tile cache |
+
+> SSL is no longer handled by `web`; the old `/etc/letsencrypt` mount was
+> removed. Certificates now live in the NPM container (see below).
 
 ---
 
 ## Networking
 
-All services share the `docker_default` bridge network. The monitoring stack (in `monitoring/`) joins this same network so Prometheus can scrape exporters by service name.
+Most services share the `docker_default` bridge network. The monitoring stack (in `monitoring/`) joins this same network so Prometheus can scrape exporters by service name.
 
 Internal hostnames:
 - `postgis` — PostgreSQL
 - `pgbouncer` — PgBouncer
 - `geoserver` — GeoServer
 - `web` — Nginx
+
+The `web` container additionally joins the shared **`edge`** network, where
+Nginx Proxy Manager reaches it by the hostname `web` (target `web:80`). The
+`edge` network is external and must be created once on the host:
+
+```bash
+docker network create edge
+```
+
+---
+
+## Nginx Proxy Manager (edge proxy + SSL)
+
+Public traffic on ports 80/443 is handled by **Nginx Proxy Manager (NPM)**,
+defined in a separate compose file at [`docker/npm/docker-compose.yml`](npm/docker-compose.yml).
+It terminates TLS and reverse-proxies `metron.duckdns.org` to the `web`
+container over the `edge` network. This keeps the tuned GWC tile-cache config in
+`web` untouched — NPM simply sits in front of it.
+
+**Why NPM is separate:** it owns the host's 80/443, has its own lifecycle, and
+its state (config DB + issued certs) is independent of the data stack.
+
+- **Admin GUI**: `http://<server>:81` (first login `admin@example.com` /
+  `changeme` — change immediately).
+- **State volumes**: `/opt/geoserver/npm/data` and `/opt/geoserver/npm/letsencrypt`.
+- **SSL**: Let's Encrypt via **DNS-01 challenge, DuckDNS provider**. The DuckDNS
+  token is entered in the GUI (`dns_duckdns_token=...`) and is **never** stored
+  in this repo.
+
+Start NPM (after creating the `edge` network):
+
+```bash
+cd docker/npm
+docker compose up -d
+```
+
+Then in the GUI create a Proxy Host for `metron.duckdns.org` forwarding to
+`http` → `web` → port `80`, and request an SSL certificate using the DNS
+challenge. See the deployment steps in the project root README / runbook.
 
 ---
 
@@ -161,9 +203,13 @@ docker-compose down -v
 
 | Port | Service | Accessible from |
 |------|---------|----------------|
-| 80 | Nginx (web + proxy) | External |
-| 443 | Nginx (HTTPS) | External |
-| 8082 | Nginx (staging) | External |
+| 80 | Nginx Proxy Manager (HTTP) | External |
+| 443 | Nginx Proxy Manager (HTTPS) | External |
+| 81 | Nginx Proxy Manager (admin GUI) | External |
+| 8082 | Nginx `web` (staging) | External |
 | 8080 | GeoServer | Internal (proxied via Nginx) |
 | 5432 | PostgreSQL | Host only |
 | 6432 | PgBouncer | Host + containers |
+
+> The `web` container serves production traffic on port 80 **internally only**
+> (over the `edge` network to NPM); it is no longer published on the host.
