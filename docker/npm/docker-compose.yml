@@ -25,7 +25,12 @@ services:
     ports:
       - "80:80"     # HTTP  (edge) — also used for ACME HTTP-01 fallback / redirects
       - "443:443"   # HTTPS (edge) — TLS terminated here
-      - "81:81"     # NPM admin GUI
+      # Admin GUI bound to loopback ONLY — not exposed to the internet. Docker
+      # publishes ports via its own iptables DNAT rules that bypass ufw, so a
+      # ufw "allow from <ip>" on 81 does NOT actually restrict it. Binding to
+      # 127.0.0.1 is the reliable, declarative fix. Reach the GUI via SSH tunnel:
+      #   ssh -L 8181:localhost:81 ubuntu@89.47.190.54   →  http://localhost:8181
+      - "127.0.0.1:81:81"  # NPM admin GUI (loopback only; use SSH tunnel)
     volumes:
       - /opt/geoserver/npm/data:/data
       - /opt/geoserver/npm/letsencrypt:/etc/letsencrypt
