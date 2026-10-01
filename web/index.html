@@ -1276,7 +1276,6 @@
         }
 
         .active-layer-controls-header .active-layer-info-btn {
-            margin-left: auto;
             width: 20px;
             height: 20px;
             border-radius: 50%;
@@ -1292,6 +1291,7 @@
         }
 
         .active-layer-controls-header .active-layer-visibility-btn {
+            margin-left: auto;
             width: 20px;
             height: 20px;
             border-radius: 50%;
@@ -1313,6 +1313,28 @@
             color: var(--primary);
             border-color: var(--primary-border);
             background: var(--primary-dim);
+        }
+
+        .active-layer-controls-header .active-layer-remove-btn {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            border: 1px solid var(--border);
+            background: rgba(255, 255, 255, 0.05);
+            color: var(--text-dim);
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.15s;
+            font-size: 11px;
+        }
+
+        .active-layer-controls-header .active-layer-remove-btn:hover,
+        .active-layer-controls-header .active-layer-remove-btn:focus-visible {
+            color: #fca5a5;
+            border-color: rgba(239, 68, 68, 0.5);
+            background: rgba(239, 68, 68, 0.18);
         }
 
         .active-layer-controls-body .layer-controls {

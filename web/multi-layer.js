@@ -1138,6 +1138,9 @@ function updateBottomPanelLayers() {
                         <button type="button" class="active-layer-info-btn" id="active-layer-info-${layerId}" data-layer-id="${layerId}" title="Show legend">
                             <i class="fa-solid fa-circle-info"></i>
                         </button>
+                        <button type="button" class="active-layer-remove-btn" id="active-layer-remove-${layerId}" data-layer-id="${layerId}" title="Remove layer">
+                            <i class="fa-solid fa-xmark"></i>
+                        </button>
                     </div>
                     <div class="active-layer-controls-body" id="active-layer-controls-body-${layerId}">
                         <div id="active-layer-legend-host-${layerId}"></div>
@@ -1152,6 +1155,7 @@ function updateBottomPanelLayers() {
             const legendHost = document.getElementById(`active-layer-legend-host-${layerId}`);
             const infoBtn = document.getElementById(`active-layer-info-${layerId}`);
             const visBtn = document.getElementById(`active-layer-visibility-${layerId}`);
+            const removeBtn = document.getElementById(`active-layer-remove-${layerId}`);
 
             if (legendHost && legendEl && legendEl.parentElement !== legendHost) {
                 legendEl.style.display = 'none';
@@ -1176,6 +1180,21 @@ function updateBottomPanelLayers() {
                     const current = activeLayers.get(layerId);
                     if (!current) return;
                     setLayerVisibility(layerId, !!current.hidden);
+                });
+            }
+
+            if (removeBtn && !removeBtn.dataset.bound) {
+                removeBtn.dataset.bound = '1';
+                removeBtn.addEventListener('click', function () {
+                    removeLayer(layerId);
+                    // Keep the hidden-panel checkbox in sync so the bubble toggle
+                    // highlight and category count badge reset to the off state
+                    // (mirrors the bubble-bar click handler).
+                    const originalCheckbox = document.getElementById(`checkbox-${layerId}`);
+                    if (originalCheckbox) {
+                        originalCheckbox.checked = false;
+                    }
+                    syncLayerBubbleState();
                 });
             }
 
