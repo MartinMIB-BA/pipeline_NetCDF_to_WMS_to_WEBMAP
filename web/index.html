@@ -606,6 +606,9 @@
         }
 
         .layer-legend-content {
+            width: 100%;
+            max-width: 100%;
+            box-sizing: border-box;
             max-height: 220px;
             overflow: auto;
             scrollbar-width: thin;
@@ -614,12 +617,31 @@
 
         .layer-legend-content img {
             width: 100%;
+            max-width: 100%;
             height: auto;
             border-radius: 4px;
             border: 1px solid rgba(255, 255, 255, 0.08);
             background: rgba(255, 255, 255, 0.9);
             display: block;
             transition: width 0.15s ease;
+        }
+
+        /* Keep the legend panel fitted when it is moved into the active-layer card.
+           The card is a CSS-grid child; min-width:0 stops the large video-WMS legend
+           PNG from driving the box to its intrinsic width and overflowing the sidebar. */
+        .active-layer-controls-body [id^="active-layer-legend-host-"] {
+            width: 100%;
+            max-width: 100%;
+            min-width: 0;
+            box-sizing: border-box;
+            overflow: hidden;
+        }
+
+        .active-layer-controls-body [id^="active-layer-legend-host-"] .layer-legend-panel {
+            width: 100%;
+            max-width: 100%;
+            min-width: 0;
+            box-sizing: border-box;
         }
 
         .layer-legend-empty {

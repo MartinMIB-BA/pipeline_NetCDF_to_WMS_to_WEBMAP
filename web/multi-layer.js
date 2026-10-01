@@ -686,9 +686,17 @@ document.addEventListener('click', function (e) {
     const current = parseInt(img.dataset.scale || '100', 10);
     let next = current;
 
+    // Reset returns to the fitted base: clear inline overrides so the CSS
+    // (width:100%; max-width:100%) governs again — identical to first-open.
+    if (btn.dataset.action === 'reset') {
+        img.dataset.scale = '100';
+        img.style.width = '';
+        img.style.maxWidth = '';
+        return;
+    }
+
     if (btn.dataset.action === 'grow')   next = Math.min(current + STEP, 200);
     if (btn.dataset.action === 'shrink') next = Math.max(current - STEP, 20);
-    if (btn.dataset.action === 'reset')  next = 100;
 
     img.dataset.scale = next;
     img.style.width = `${next}%`;
