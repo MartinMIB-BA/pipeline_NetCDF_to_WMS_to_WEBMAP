@@ -353,6 +353,7 @@ function initializeLayerBubbleBar() {
                     <div class="layer-bubble-item" data-layer-id="${layerId}" style="cursor: pointer;">
                         <span class="layer-bubble-item-name">${displayName}</span>
                         <button type="button" class="layer-bubble-toggle" id="bubble-toggle-${category.key}-${layerId}" data-category="${category.key}" aria-pressed="false" style="pointer-events: none;"><i class="fa-solid fa-check" style="opacity: 0;"></i></button>
+                        <button type="button" class="layer-bubble-remove" data-layer-id="${layerId}" title="Remove layer" aria-label="Remove layer"><i class="fa-solid fa-xmark"></i></button>
                     </div>
                 `;
             });
@@ -422,6 +423,29 @@ function initializeLayerBubbleBar() {
     // Menus are now siblings of the bubble bar inside .layers-panel
     const layersPanel = wrap.parentElement;
     layersPanel.addEventListener('click', function (e) {
+        // Remove ("X") button — handle first so the toggle logic below never fires for it
+        const removeBtn = e.target.closest('.layer-bubble-remove');
+        if (removeBtn) {
+            e.stopPropagation();
+            const removeId = removeBtn.getAttribute('data-layer-id');
+            if (removeId) {
+                // Turn off the layer if active (removeLayer handles map + activeLayers +
+                // _layersWithNoData + updateBottomPanelLayers + syncLayerBubbleState)
+                if (activeLayers.has(removeId)) {
+                    removeLayer(removeId);
+                }
+                // Drop the row from the drawer DOM
+                const row = removeBtn.closest('.layer-bubble-item');
+                if (row) row.remove();
+                // Keep the hidden-panel checkbox in sync if present
+                const cb = document.getElementById(`checkbox-${removeId}`);
+                if (cb) cb.checked = false;
+                updateLayerCount();
+                syncLayerBubbleState();
+            }
+            return;
+        }
+
         const item = e.target.closest('.layer-bubble-item');
         if (!item) return;
 

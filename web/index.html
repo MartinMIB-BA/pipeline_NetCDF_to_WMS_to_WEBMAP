@@ -416,6 +416,30 @@
             transform: scale(1.05);
         }
 
+        .layer-bubble-remove {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 22px;
+            height: 22px;
+            padding: 0;
+            border-radius: 999px;
+            border: 1px solid rgba(148, 163, 184, 0.2);
+            background: rgba(148, 163, 184, 0.08);
+            color: var(--text-dim);
+            font-size: 11px;
+            cursor: pointer;
+            transition: all 0.16s ease;
+            flex-shrink: 0;
+        }
+
+        .layer-bubble-remove:hover {
+            border-color: rgba(239, 68, 68, 0.5);
+            background: rgba(239, 68, 68, 0.14);
+            color: #fca5a5;
+            transform: scale(1.08);
+        }
+
         /* ── GloFAS category — amber accent ── */
         [data-category="glofas"] .layer-bubble-trigger {
             border-color: rgba(251, 191, 36, 0.2);
