@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <defs>
+    <linearGradient id="mGrad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#1e3a8a"/>
+      <stop offset="60%" stop-color="#1e40af"/>
+      <stop offset="100%" stop-color="#0e7490"/>
+    </linearGradient>
+    <linearGradient id="waveGrad" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#2563eb"/>
+      <stop offset="100%" stop-color="#10b981"/>
+    </linearGradient>
+    <clipPath id="circleClip">
+      <circle cx="32" cy="32" r="30"/>
+    </clipPath>
+  </defs>
+
+  <!-- Circle background + border -->
+  <circle cx="32" cy="32" r="30" fill="#ffffff" stroke="#1e3a8a" stroke-width="2.5"/>
+
+  <g clip-path="url(#circleClip)">
+    <!-- Bottom waves -->
+    <path d="M2 44 Q16 36 32 44 T62 44 V64 H2 Z" fill="url(#waveGrad)" opacity="0.9"/>
+    <path d="M2 50 Q16 43 32 50 T62 50 V64 H2 Z" fill="#1e40af" opacity="0.85"/>
+
+    <!-- Letter M -->
+    <path d="M16 46 V22 H22 L32 36 L42 22 H48 V46 H41 V32 L34 42 H30 L23 32 V46 Z"
+          fill="url(#mGrad)"/>
+  </g>
+</svg>
