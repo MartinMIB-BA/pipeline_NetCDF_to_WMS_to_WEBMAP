@@ -2950,7 +2950,40 @@ async function getFeatureInfo(latlng) {
     // Check if using multi-layer system or single layer
     const useMultiLayer = typeof activeLayers !== 'undefined' && activeLayers.size > 0;
 
-    if (!useMultiLayer && !wmsLayer) {
+    // Authoritative visibility check: count WMS overlay tile layers actually on the map
+    // right now, ignoring the basemap and country-info helper layers. This is independent
+    // of activeLayers / wmsLayer bookkeeping, so a stale reference can't resurrect a popup.
+    let visibleOverlayCount = 0;
+    if (window.map && typeof window.map.eachLayer === 'function') {
+        window.map.eachLayer(layer => {
+            // WMS overlays are L.tileLayer.wms instances → they carry a wmsParams object.
+            if (layer && layer.wmsParams && layer.wmsParams.layers) {
+                visibleOverlayCount++;
+            }
+        });
+    }
+
+    // Only probe layers the user can actually see. A layer hidden via the eye toggle
+    // is removed from the map but still lives in activeLayers — it must NOT trigger a popup.
+    const hasVisibleLayer = useMultiLayer
+        && Array.from(activeLayers.values()).some(ld => ld && !ld.hidden);
+
+    // No overlay layer is on (all removed, or all hidden → only the basemap is visible):
+    // don't open a GetFeatureInfo popup with empty / zero values.
+    // We require BOTH an active, non-hidden layer AND a real WMS overlay on the map.
+    // NOTE: we deliberately do NOT fall back to the legacy `wmsLayer` alias when it is no
+    // longer on the map, because it can hold a stale reference after the last multi-layer
+    // was removed, which produced spurious "No data"/zero popups over the bare basemap.
+    if (visibleOverlayCount === 0) {
+        console.log('ℹ️ No visible overlay layer on map — skipping GetFeatureInfo popup');
+        return;
+    }
+    if (useMultiLayer) {
+        if (!hasVisibleLayer) {
+            console.log('ℹ️ No visible overlay layer — skipping GetFeatureInfo popup');
+            return;
+        }
+    } else if (!wmsLayer || !window.map.hasLayer(wmsLayer)) {
         console.warn('⚠️ No WMS layer active');
         return;
     }
@@ -3020,6 +3053,7 @@ async function getFeatureInfo(latlng) {
             for (const layerId of orderedLayerIds) {
                 const layerData = activeLayers.get(layerId);
                 if (!layerData) continue;
+                if (layerData.hidden) continue; // skip eye-toggled-off layers — they're not visible
                 promises.push(queryLayer(layerId, layerData, latlng, point, size, signal));
             }
 
@@ -3066,10 +3100,14 @@ async function getFeatureInfo(latlng) {
             }
         } else {
             const meta = layerMetadata[currentParams.layer];
-            if (meta && meta.type === 'video') {
+            const legacyWmsLayer = (window.activeLayers && window.activeLayers.get(currentParams.layer)?.wmsLayer) || wmsLayer;
+            // Only chart a legacy single video layer if it's genuinely still on the map.
+            // Guards against charting a turned-off layer via the stale currentParams.layer.
+            const legacyVisible = legacyWmsLayer && window.map && window.map.hasLayer(legacyWmsLayer);
+            if (meta && meta.type === 'video' && legacyVisible) {
                 videoLayersToChart.push({
                     layerId: currentParams.layer,
-                    layerData: { time: currentParams.time, elevation: currentParams.elevation, metadata: meta, wmsLayer: (window.activeLayers && window.activeLayers.get(currentParams.layer)?.wmsLayer) },
+                    layerData: { time: currentParams.time, elevation: currentParams.elevation, metadata: meta, wmsLayer: legacyWmsLayer },
                     layerName: (typeof layerDisplayNames !== 'undefined' ? layerDisplayNames[currentParams.layer] : null) || currentParams.layer
                 });
             }
