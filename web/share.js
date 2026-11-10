@@ -94,13 +94,18 @@ window._sharedState = (function () {
     // re-issues the same query a user click would. Gives up after ~20s.
     function restoreClickPoints() {
         const s = window._sharedState;
-        if (!s || !s.pts || typeof window.restoreClickPoint !== 'function') return;
+        if (!s || !s.pts) return;
+        if (typeof window.restoreClickPoint !== 'function') {
+            console.warn('🔗 restoreClickPoints: window.restoreClickPoint not available');
+            return;
+        }
 
         const points = s.pts.split(';').map(pair => {
             const [lat, lng] = pair.split(',').map(parseFloat);
             return (isFinite(lat) && isFinite(lng)) ? { lat, lng } : null;
         }).filter(Boolean);
         if (points.length === 0) return;
+        console.log('🔗 restoreClickPoints: will restore', points.length, 'point(s)', points);
 
         function hasVisibleOverlay() {
             if (!window.map || typeof window.map.eachLayer !== 'function') return false;
@@ -116,12 +121,14 @@ window._sharedState = (function () {
             tries++;
             if (hasVisibleOverlay()) {
                 clearInterval(poll);
+                console.log('🔗 restoreClickPoints: overlay ready after', tries * 100, 'ms — replaying points');
                 // Small delay so layer params (TIME etc.) are fully settled.
                 setTimeout(() => {
                     points.forEach(p => window.restoreClickPoint(p.lat, p.lng));
-                }, 400);
-            } else if (tries > 200) {
+                }, 800);
+            } else if (tries > 300) {
                 clearInterval(poll);
+                console.warn('🔗 restoreClickPoints: gave up waiting for a visible overlay layer (30s)');
             }
         }, 100);
     }
@@ -197,8 +204,6 @@ window._sharedState = (function () {
                 window.onClickPointsChange = scheduleHashUpdate;
                 // Re-open shared popups once layers are ready
                 restoreClickPoints();
-                // Country-info panel open/close → update hash
-                window.onCountryInfoChange = scheduleHashUpdate;
             } else if (tries > 50) {
                 clearInterval(poll);
             }

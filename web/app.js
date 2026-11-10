@@ -2801,10 +2801,12 @@ window.removeAllClickPoints = removeAllClickPoints;
 // and time-series charts are re-queried live against the active layers + date.
 // So sharing only needs the list of clicked coordinates.
 window.getClickPoints = function () {
-    return Array.from(clickPoints.values()).map(pt => ({
+    const pts = Array.from(clickPoints.values()).map(pt => ({
         lat: Number(pt.latlng.lat).toFixed(4),
         lng: Number(pt.latlng.lng).toFixed(4)
     }));
+    console.log('🔗 getClickPoints →', pts.length, 'point(s)', pts);
+    return pts;
 };
 
 // Re-open a popup at a given latlng exactly as a user click would (read-only:
@@ -2812,7 +2814,10 @@ window.getClickPoints = function () {
 window.restoreClickPoint = function (lat, lng) {
     try {
         if (typeof getFeatureInfo === 'function' && window.L) {
+            console.log('🔗 restoreClickPoint → getFeatureInfo at', lat, lng);
             getFeatureInfo(L.latLng(lat, lng));
+        } else {
+            console.warn('🔗 restoreClickPoint: getFeatureInfo/L not available');
         }
     } catch (e) {
         console.warn('restoreClickPoint failed:', e);
