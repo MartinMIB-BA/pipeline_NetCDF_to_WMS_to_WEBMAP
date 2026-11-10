@@ -2786,6 +2786,7 @@ function removeClickPoint(id) {
     try { if (pt.popup && map.hasLayer(pt.popup)) map.closePopup(pt.popup); } catch (_) { }
     if (el && el.parentNode) el.parentNode.removeChild(el);
     clickPoints.delete(id);
+    notifyClickPointsChanged();
 }
 
 // Remove every active point (used e.g. before a full reset if ever needed).
@@ -2794,6 +2795,38 @@ function removeAllClickPoints() {
     clickPointColorIdx = 0;
 }
 window.removeAllClickPoints = removeAllClickPoints;
+
+// ── Share support: expose open points + a restore helper ───────
+// A click point is fully reconstructible from its latlng alone — the values
+// and time-series charts are re-queried live against the active layers + date.
+// So sharing only needs the list of clicked coordinates.
+window.getClickPoints = function () {
+    return Array.from(clickPoints.values()).map(pt => ({
+        lat: Number(pt.latlng.lat).toFixed(4),
+        lng: Number(pt.latlng.lng).toFixed(4)
+    }));
+};
+
+// Re-open a popup at a given latlng exactly as a user click would (read-only:
+// it just re-runs GetFeatureInfo). Used by share.js when restoring a link.
+window.restoreClickPoint = function (lat, lng) {
+    try {
+        if (typeof getFeatureInfo === 'function' && window.L) {
+            getFeatureInfo(L.latLng(lat, lng));
+        }
+    } catch (e) {
+        console.warn('restoreClickPoint failed:', e);
+    }
+};
+
+// Notify listeners (share.js) whenever the set of open points changes so the
+// shareable URL hash can be kept in sync.
+function notifyClickPointsChanged() {
+    if (typeof window.onClickPointsChange === 'function') {
+        try { window.onClickPointsChange(); } catch (_) { }
+    }
+}
+window.notifyClickPointsChanged = notifyClickPointsChanged;
 
 // Make a Leaflet popup manually draggable via its ".popup-drag-handle" header.
 //
@@ -3014,6 +3047,7 @@ async function getFeatureInfo(latlng) {
 
     // Track this point. Marker is added later (only for video-chart clicks).
     clickPoints.set(pointId, { latlng, color, marker: null, popup: loadingPopup, controller });
+    notifyClickPointsChanged();
 
     // When this popup closes (× button or Esc), remove ONLY this point.
     loadingPopup.on('remove', () => removeClickPoint(pointId));

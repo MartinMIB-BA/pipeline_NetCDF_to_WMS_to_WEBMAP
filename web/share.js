@@ -44,6 +44,15 @@ window._sharedState = (function () {
             state.layers = Array.from(window.activeLayers.keys()).join(',');
         }
         if (window.currentBaseMapId) state.base = window.currentBaseMapId;
+
+        // Open GetFeatureInfo popups (read-only): share just the clicked points.
+        // Each point's values + charts are re-queried live on restore.
+        if (typeof window.getClickPoints === 'function') {
+            const pts = window.getClickPoints();
+            if (pts && pts.length > 0) {
+                state.pts = pts.map(p => `${p.lat},${p.lng}`).join(';');
+            }
+        }
         return state;
     }
 
@@ -77,6 +86,44 @@ window._sharedState = (function () {
         if (s.lat && s.lng && s.z) {
             window.map.setView([parseFloat(s.lat), parseFloat(s.lng)], parseInt(s.z));
         }
+    }
+
+    // ── Restore shared GetFeatureInfo popups ───────────────────
+    // Replays each clicked point once an overlay WMS layer is actually on the
+    // map (getFeatureInfo bails out with no visible overlay). Read-only: it just
+    // re-issues the same query a user click would. Gives up after ~20s.
+    function restoreClickPoints() {
+        const s = window._sharedState;
+        if (!s || !s.pts || typeof window.restoreClickPoint !== 'function') return;
+
+        const points = s.pts.split(';').map(pair => {
+            const [lat, lng] = pair.split(',').map(parseFloat);
+            return (isFinite(lat) && isFinite(lng)) ? { lat, lng } : null;
+        }).filter(Boolean);
+        if (points.length === 0) return;
+
+        function hasVisibleOverlay() {
+            if (!window.map || typeof window.map.eachLayer !== 'function') return false;
+            let count = 0;
+            window.map.eachLayer(layer => {
+                if (layer && layer.wmsParams && layer.wmsParams.layers) count++;
+            });
+            return count > 0;
+        }
+
+        let tries = 0;
+        const poll = setInterval(() => {
+            tries++;
+            if (hasVisibleOverlay()) {
+                clearInterval(poll);
+                // Small delay so layer params (TIME etc.) are fully settled.
+                setTimeout(() => {
+                    points.forEach(p => window.restoreClickPoint(p.lat, p.lng));
+                }, 400);
+            } else if (tries > 200) {
+                clearInterval(poll);
+            }
+        }, 100);
     }
 
     // ── Copy Link button ───────────────────────────────────────
@@ -146,6 +193,12 @@ window._sharedState = (function () {
                 const panel = document.getElementById('active-layers-panel');
                 if (panel) new MutationObserver(scheduleHashUpdate)
                     .observe(panel, { childList: true, subtree: true });
+                // Open/close of GetFeatureInfo popups → update hash
+                window.onClickPointsChange = scheduleHashUpdate;
+                // Re-open shared popups once layers are ready
+                restoreClickPoints();
+                // Country-info panel open/close → update hash
+                window.onCountryInfoChange = scheduleHashUpdate;
             } else if (tries > 50) {
                 clearInterval(poll);
             }
