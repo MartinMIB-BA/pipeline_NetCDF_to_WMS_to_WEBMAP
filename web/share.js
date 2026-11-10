@@ -53,6 +53,13 @@ window._sharedState = (function () {
                 state.pts = pts.map(p => `${p.lat},${p.lng}`).join(';');
             }
         }
+
+        // Open Country Info panel (land click) — share its clicked point so the
+        // panel reopens and re-queries country data live on restore.
+        if (typeof window.getOpenCountryPoint === 'function') {
+            const cp = window.getOpenCountryPoint();
+            if (cp) state.ci = `${cp.lat},${cp.lng}`;
+        }
         return state;
     }
 
@@ -94,18 +101,24 @@ window._sharedState = (function () {
     // re-issues the same query a user click would. Gives up after ~20s.
     function restoreClickPoints() {
         const s = window._sharedState;
-        if (!s || !s.pts) return;
-        if (typeof window.restoreClickPoint !== 'function') {
-            console.warn('🔗 restoreClickPoints: window.restoreClickPoint not available');
-            return;
-        }
+        if (!s) return;
+        const haveSeaPts = s.pts && typeof window.restoreClickPoint === 'function';
+        const haveCountryPt = s.ci && typeof window.restoreCountryPoint === 'function';
+        if (!haveSeaPts && !haveCountryPt) return;
 
-        const points = s.pts.split(';').map(pair => {
+        const points = (haveSeaPts ? s.pts.split(';') : []).map(pair => {
             const [lat, lng] = pair.split(',').map(parseFloat);
             return (isFinite(lat) && isFinite(lng)) ? { lat, lng } : null;
         }).filter(Boolean);
-        if (points.length === 0) return;
-        console.log('🔗 restoreClickPoints: will restore', points.length, 'point(s)', points);
+
+        let countryPt = null;
+        if (haveCountryPt) {
+            const [lat, lng] = s.ci.split(',').map(parseFloat);
+            if (isFinite(lat) && isFinite(lng)) countryPt = { lat, lng };
+        }
+        if (points.length === 0 && !countryPt) return;
+        console.log('🔗 restoreClickPoints: will restore', points.length, 'sea point(s) and',
+            countryPt ? '1 country point' : 'no country point');
 
         function hasVisibleOverlay() {
             if (!window.map || typeof window.map.eachLayer !== 'function') return false;
@@ -121,10 +134,11 @@ window._sharedState = (function () {
             tries++;
             if (hasVisibleOverlay()) {
                 clearInterval(poll);
-                console.log('🔗 restoreClickPoints: overlay ready after', tries * 100, 'ms — replaying points');
+                console.log('🔗 restoreClickPoints: overlay ready after', tries * 100, 'ms — replaying');
                 // Small delay so layer params (TIME etc.) are fully settled.
                 setTimeout(() => {
                     points.forEach(p => window.restoreClickPoint(p.lat, p.lng));
+                    if (countryPt) window.restoreCountryPoint(countryPt.lat, countryPt.lng);
                 }, 800);
             } else if (tries > 300) {
                 clearInterval(poll);
@@ -202,6 +216,8 @@ window._sharedState = (function () {
                     .observe(panel, { childList: true, subtree: true });
                 // Open/close of GetFeatureInfo popups → update hash
                 window.onClickPointsChange = scheduleHashUpdate;
+                // Open/close of Country Info panel → update hash
+                window.onCountryInfoChange = scheduleHashUpdate;
                 // Re-open shared popups once layers are ready
                 restoreClickPoints();
             } else if (tries > 50) {

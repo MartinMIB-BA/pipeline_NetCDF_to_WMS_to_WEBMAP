@@ -111,6 +111,33 @@
     // ── Draggable floating panel ───────────────────────────────
     let panelEl = null;
 
+    // ── Currently open country point (for shareable link) ──────
+    // We store the clicked latlng; on restore we replay the exact same
+    // land-click so the panel re-queries live data (read-only share).
+    let openCountryLatLng = null;
+    function notifyCountryChange() {
+        if (typeof window.onCountryInfoChange === 'function') {
+            try { window.onCountryInfoChange(); } catch (_) { }
+        }
+    }
+    // Exposed for share.js: the open panel's clicked point, or null.
+    window.getOpenCountryPoint = function () {
+        if (!openCountryLatLng) return null;
+        return {
+            lat: Number(openCountryLatLng.lat).toFixed(4),
+            lng: Number(openCountryLatLng.lng).toFixed(4)
+        };
+    };
+    // Exposed for share.js: replay a land-click at lat/lng to reopen the panel.
+    window.restoreCountryPoint = function (lat, lng) {
+        try {
+            console.log('🔗 restoreCountryPoint → country click at', lat, lng);
+            handleCountryClick({ latlng: L.latLng(lat, lng) }, function () {});
+        } catch (e) {
+            console.warn('🔗 restoreCountryPoint failed:', e);
+        }
+    };
+
     function createPanel() {
         if (panelEl) return;
 
@@ -138,6 +165,8 @@
         createPanel();
         document.getElementById('cip-body').innerHTML = html;
         panelEl.style.display = 'flex';
+        openCountryLatLng = latlng;
+        notifyCountryChange();
 
         // Position near click point (converted to screen coords), offset to the right
         const pt = map.latLngToContainerPoint(latlng);
@@ -160,6 +189,8 @@
         if (panelEl) panelEl.style.display = 'none';
         hideBuffer();
         hideHighlight();
+        openCountryLatLng = null;
+        notifyCountryChange();
     }
 
     function makePanelDraggable(panel, handle) {
