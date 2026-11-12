@@ -582,11 +582,52 @@ function hideLoadingOverlay() {
     if (overlay) overlay.style.display = 'none';
 }
 
+// ───────────────────────────────────────────────────────────────
+// QW-4: HONEST, TILE-DRIVEN LOADING STATE
+// Instead of showing/hiding the overlay right after a synchronous metadata check, drive it off
+// REAL Leaflet WMS tile events: beginLayerLoading() on 'loading', endLayerLoading() on 'load'.
+// A watchdog timer guarantees the spinner can never stick visible (force-clears after a bound).
+// ───────────────────────────────────────────────────────────────
+const _layersLoadingTiles = new Set();
+let _loadingWatchdog = null;
+const LOADING_WATCHDOG_MS = 8000;
+
+function _clearLoadingWatchdog() {
+    if (_loadingWatchdog) {
+        clearTimeout(_loadingWatchdog);
+        _loadingWatchdog = null;
+    }
+}
+
+function beginLayerLoading(layerId) {
+    if (!layerId) return;
+    _layersLoadingTiles.add(layerId);
+    showLoadingOverlay();
+    // (Re)arm the safety timeout so a layer that never fires 'load' can't hold the spinner forever.
+    _clearLoadingWatchdog();
+    _loadingWatchdog = setTimeout(() => {
+        _layersLoadingTiles.clear();
+        _loadingWatchdog = null;
+        hideLoadingOverlay();
+    }, LOADING_WATCHDOG_MS);
+}
+
+function endLayerLoading(layerId) {
+    if (!layerId) return;
+    _layersLoadingTiles.delete(layerId);
+    if (_layersLoadingTiles.size === 0) {
+        _clearLoadingWatchdog();
+        hideLoadingOverlay();
+    }
+}
+
 // Export to window for multi-layer.js
 window.showNoDataOverlay = showNoDataOverlay;
 window.hideNoDataOverlay = hideNoDataOverlay;
 window.showLoadingOverlay = showLoadingOverlay;
 window.hideLoadingOverlay = hideLoadingOverlay;
+window.beginLayerLoading = beginLayerLoading;
+window.endLayerLoading = endLayerLoading;
 
 // ═══════════════════════════════════════════════════════════════
 // CRITICAL FIX: Robust Rendering & Error Handling
@@ -1016,8 +1057,8 @@ async function updateWMSParams() {
 
     console.log(`📝 Updating params (Cycle #${currentLoadCycleId})`);
 
-    // UI Updates
-    if (window.showLoadingOverlay) window.showLoadingOverlay(); // Show spinner
+    // QW-4: overlay is now driven by real tile loading/load events (begin/endLayerLoading),
+    // not by this synchronous param update — removed the show-then-hide-after-metadata-check.
 
     // If multi-layer system is active, refreshLayerTiles already called setParams+redraw
     // for all active layers — skip here to prevent a second (duplicate) redraw.
@@ -1039,7 +1080,7 @@ async function updateWMSParams() {
     // This shows banner IMMEDIATELY without waiting for tiles
     await checkDataAvailability();
 
-    if (window.hideLoadingOverlay) window.hideLoadingOverlay(); // Hide spinner
+    // QW-4: no hideLoadingOverlay() here — endLayerLoading() hides it when tiles actually settle.
 
     updateLayerInfo();
 }
@@ -1570,6 +1611,52 @@ async function preloadAllFrames(forceAllFrames = false) {
             playBtn.innerHTML = originalText;
             playBtn.disabled = false;
             return false;
+        }
+
+        // QW-2: INITIAL-LOAD DEFERRAL. During the default-layer startup window the seeded path
+        // would normally fire all 16 frames at once (6 HTTP/1.1 connections saturated), starving
+        // the choropleth + GloFAS + static requests and making first paint slow/inconsistent.
+        // On initial load (and NOT when the user clicked Play → forceAllFrames) preload frame 0
+        // only — done above — then schedule frames 1..N once the browser is idle, using the SAME
+        // staggered background pattern as the non-seeded path. Play (forceAllFrames) and all
+        // post-startup re-preloads are unaffected and still fully preload.
+        if (window._initialLayerLoadInProgress && !forceAllFrames && totalFrames > 1) {
+            console.log(`⏳ [INITIAL LOAD] Frame 0 ready — deferring frames 1-${totalFrames-1} until idle (QW-2)`);
+            playBtn.innerHTML = originalText;
+            console.timeEnd('⏱️ Total preload time');
+
+            const layerSnapshot = currentParams.layer;
+            const timeSnapshot = currentParams.time;
+
+            const warmRemaining = () => {
+                // Re-check guards: layer still active + still current + nothing else driving frames.
+                if (currentParams.layer !== layerSnapshot || currentParams.time !== timeSnapshot
+                        || window.isAnimating || window.isAnimationLoading) {
+                    return;
+                }
+                window.isBackgroundWarming = true;
+                (async () => {
+                    try {
+                        for (let i = 1; i < totalFrames; i += 2) {
+                            if (currentParams.layer !== layerSnapshot || currentParams.time !== timeSnapshot
+                                    || window.isAnimating || window.isAnimationLoading) break;
+                            const batch = [preloadFrame(i, null, currentZoom)];
+                            if (i + 1 < totalFrames) batch.push(preloadFrame(i + 1, null, currentZoom));
+                            await Promise.all(batch);
+                            await new Promise(r => setTimeout(r, 400));
+                        }
+                    } finally {
+                        window.isBackgroundWarming = false;
+                    }
+                })();
+            };
+
+            if (typeof window.requestIdleCallback === 'function') {
+                window.requestIdleCallback(warmRemaining, { timeout: 4000 });
+            } else {
+                setTimeout(warmRemaining, 2500);
+            }
+            return true;
         }
 
         // Non-seeded zoom (auto-preload only): load frame 0 immediately (already done above),
@@ -2173,36 +2260,47 @@ document.getElementById('layer-select').addEventListener('change', (e) => {
             }
         }
 
+        // QW-3: these three were previously undeclared in this handler, so when
+        // metadata.hasElevation === true the block threw "elevationControl is not defined"
+        // before recreateWMSLayer() could run. Declare + null-guard them the same way the
+        // sibling blocks do (getElementById + `if (el)`). The global elevation control uses ids
+        // `elevation-select` (slider) and `elevation-value` (label); there is no
+        // `elevation-control` container in the DOM, so elevationControl resolves to null and its
+        // guarded uses are no-ops — matching the pre-existing latent intent, not throwing.
+        const elevationControl = document.getElementById('elevation-control');
+        const elevationSlider = document.getElementById('elevation-select');
+        const elevationLabel = document.getElementById('elevation-value');
+
         // ENHANCED FIX: Explicitly hide elevation control for static layers
         if (metadata && metadata.hasElevation === true) {
-            elevationControl.style.display = 'flex';
+            if (elevationControl) elevationControl.style.display = 'flex';
             console.log('✅ Elevation control shown (hasElevation=true)');
 
             // Adjust range based on layer type
             if (metadata.type === 'video') {
-                elevationSlider.max = 15;  // Forecast days 0-15
+                if (elevationSlider) elevationSlider.max = 15;  // Forecast days 0-15
                 const label = 'Day';
-                elevationLabel.textContent = `${label}: ${currentParams.elevation}`;
+                if (elevationLabel) elevationLabel.textContent = `${label}: ${currentParams.elevation}`;
             } else {
-                elevationSlider.max = 8;   // Return periods 0-8
+                if (elevationSlider) elevationSlider.max = 8;   // Return periods 0-8
                 const label = metadata.type === 'points' ? 'RP' : 'RP';
-                elevationLabel.textContent = `${label}: ${currentParams.elevation}`;
+                if (elevationLabel) elevationLabel.textContent = `${label}: ${currentParams.elevation}`;
             }
 
             // CRITICAL FIX: Always reset elevation to 0 when switching layers
             // This ensures first frame is shown
             currentParams.elevation = 0;
-            elevationSlider.value = 0;
-            elevationLabel.textContent = metadata.type === 'video' ? 'Day: 0' : 'RP: 0';
+            if (elevationSlider) elevationSlider.value = 0;
+            if (elevationLabel) elevationLabel.textContent = metadata.type === 'video' ? 'Day: 0' : 'RP: 0';
             console.log('🔄 [LAYER SWITCH] Reset elevation to 0 (first frame)');
         } else {
             // ENHANCED FIX: Force hide elevation control for static layers with explicit logging
-            elevationControl.style.display = 'none';
+            if (elevationControl) elevationControl.style.display = 'none';
             console.log('🔒 Elevation control HIDDEN for static layer (hasElevation=false)');
 
             // Reset elevation to 0 when switching to layer without elevation
             currentParams.elevation = 0;
-            elevationSlider.value = 0;
+            if (elevationSlider) elevationSlider.value = 0;
         }
 
         // ✅ CRITICAL: Layer change requires recreation (now with graceful cleanup)
