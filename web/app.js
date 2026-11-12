@@ -564,29 +564,9 @@ function hideNoDataOverlay() {
     }
 }
 
-// Transient, non-blocking toast — reuses the existing #no-data-overlay banner.
-// Snapshots and restores the banner's original text so it never clobbers the
-// real "no data" state; uses its own timer separate from _noDataOverlayTimer.
-let _toastTimer = null;
-function showToast(message, duration = 4000) {
-    const overlay = document.getElementById('no-data-overlay');
-    if (!overlay) return;
-    const span = overlay.querySelector('span');
-    if (!span) return;
-    if (_toastTimer === null) {
-        showToast._originalText = span.textContent;
-    }
-    clearTimeout(_toastTimer);
-    span.textContent = message;
-    overlay.style.display = 'flex';
-    _toastTimer = setTimeout(() => {
-        overlay.style.display = 'none';
-        if (typeof showToast._originalText === 'string') {
-            span.textContent = showToast._originalText;
-        }
-        _toastTimer = null;
-    }, duration);
-}
+// Transient toasts now use the shared window.showToast utility (toast.js),
+// which renders its own bottom-center element and no longer reuses the
+// #no-data-overlay banner (so the real "no data" text is never clobbered).
 
 // ═══════════════════════════════════════════════════════════════
 // LOADING SPINNER FUNCTIONS
@@ -1778,7 +1758,7 @@ async function startAnimation(skipPreload = false) {
     const currentZoomForAnim = getCurrentZoomLevel();
     if (currentZoomForAnim > GWC_MAX_SEEDED_ZOOM) {
         console.warn(`⚠️ Animation blocked at zoom ${currentZoomForAnim} — only available at zoom ≤ ${GWC_MAX_SEEDED_ZOOM}`);
-        showToast('Animation is only available at zoom level ' + GWC_MAX_SEEDED_ZOOM + ' or lower. Zoom out to play.');
+        if (typeof window.showToast === 'function') window.showToast('Animation is only available at zoom level ' + GWC_MAX_SEEDED_ZOOM + ' or lower. Zoom out to play.', 'warning');
         return;
     }
 

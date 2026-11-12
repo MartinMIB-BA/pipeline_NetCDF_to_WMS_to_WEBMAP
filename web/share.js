@@ -160,6 +160,7 @@ window._sharedState = (function () {
             btn.innerHTML = '<i class="fa-solid fa-check"></i>';
             btn.style.color = '#34d399';
             btn.style.borderColor = 'rgba(52,211,153,0.5)';
+            if (typeof window.showToast === 'function') window.showToast('Link copied', 'success');
             setTimeout(() => {
                 btn.innerHTML = '<i class="fa-solid fa-link"></i>';
                 btn.style.color = '';

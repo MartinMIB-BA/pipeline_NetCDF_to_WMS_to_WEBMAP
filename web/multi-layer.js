@@ -1216,6 +1216,10 @@ function updateBottomPanelLayers() {
         });
 
         applyMapZOrderFromPanel();
+
+        // Auto-hide the first-load onboarding hint (U4) as soon as any layer
+        // becomes active — reuses the existing activeLayers state, no new source.
+        if (typeof window.maybeHideOnboarding === 'function') window.maybeHideOnboarding();
     } catch (err) {
         console.error('❌ updateBottomPanelLayers error:', err);
     }
