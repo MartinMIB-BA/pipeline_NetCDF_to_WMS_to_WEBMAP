@@ -2079,9 +2079,10 @@ document.addEventListener('DOMContentLoaded', function () {
             } else {
                 // STARTUP PRELOAD GATE: mark the initial default-layer load so preloadAllFrames
                 // loads ONLY the base grid (+ opacity-0 frame 0) for each video layer and defers
-                // animation frames 1..N to the first real user action (Play/scrub/zoom). The flag
-                // is cleared by those user actions in app.js — NOT by a timer — so frames 1..N are
-                // never fetched during the initial page load.
+                // animation frames 1..N to the first real user action — Play or scrubbing the day
+                // slider (NOT zoom; zooming must stay cheap and never preload). The flag is cleared
+                // by those user actions in app.js — NOT by a timer — so frames 1..N are never
+                // fetched during the initial page load.
                 if (!window._initialLayerLoadInProgress) {
                     window._initialLayerLoadInProgress = true;
                 }

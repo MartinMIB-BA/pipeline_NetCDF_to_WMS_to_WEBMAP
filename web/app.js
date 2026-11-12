@@ -1626,9 +1626,9 @@ async function preloadAllFrames(forceAllFrames = false) {
         // startup. Frames 1..N are deferred to the first real user action — Play
         // (forceAllFrames → full preload here) or scrubbing the day slider (loads frames
         // on demand via preloadSingleFrame). The `_initialLayerLoadInProgress` gate is cleared
-        // by the first user action (Play / date-change / zoom), NOT by a timer, so no background
-        // self-re-queue ever fetches frames 1..N during the initial load. This applies to every
-        // video layer because preloadAllFrames is layer-agnostic.
+        // by the first user action (Play / date-change scrub), NOT by zoom and NOT by a timer, so
+        // no background self-re-queue — and no zoom — ever fetches frames 1..N. This applies to
+        // every video layer because preloadAllFrames is layer-agnostic.
         if (window._initialLayerLoadInProgress && !forceAllFrames && totalFrames > 1) {
             console.log(`⏳ [INITIAL LOAD] Frame 0 ready for ${currentParams.layer} — deferring frames 1-${totalFrames-1} until first Play/scrub`);
             playBtn.innerHTML = originalText;
@@ -2812,38 +2812,19 @@ map.on('zoomend', function () {
         });
     }
 
-    // A zoom is a real user action — end the startup window so the re-preload below runs its
-    // normal full path instead of the startup frame-0-only deferral.
-    window._initialLayerLoadInProgress = false;
-
-    // Re-preload video frames for the new zoom so slider stays smooth after zooming.
-    // Pre-seeded zoom (≤4): all 16 frames. Non-seeded zoom (5+): frame 0 only (see preloadAllFrames).
-    if (!window.isAnimating && !window.isAnimationLoading && window.autoPreloadVideoLayer) {
-        const roundedNew = Math.round(newZoom);
-        const strategy = roundedNew <= GWC_MAX_SEEDED_ZOOM ? 'all 16 frames (seeded)' : 'frame 0 only (on-the-fly)';
-        setTimeout(() => {
-            if (window.activeLayers) {
-                window.activeLayers.forEach((layerData, layerId) => {
-                    if (layerData.metadata && layerData.metadata.type === 'video'
-                            && GWC_LAYERS.includes(layerId)
-                            && !window.isAnimating && !window.isAnimationLoading) {
-                        console.log(`🔄 [ZOOM ${roundedNew}] Re-preloading ${layerId} — ${strategy}`);
-                        // autoPreloadVideoLayer front-loads day 0 (opacity 0) and may leave a
-                        // day-0 instance on top. Chain the restore to its completion (not a
-                        // fixed timeout) so the user's selected day always ends up visible,
-                        // regardless of how long the preload took.
-                        Promise.resolve(window.autoPreloadVideoLayer(layerId)).finally(() => {
-                            if (!window.isAnimating
-                                    && window.restoreVideoFrameForZoom
-                                    && window.activeLayers && window.activeLayers.has(layerId)) {
-                                window.restoreVideoFrameForZoom(layerId, window.activeLayers.get(layerId));
-                            }
-                        });
-                    }
-                });
-            }
-        }, 400);
-    }
+    // ZOOM MUST NOT TRIGGER A FRAME PRELOAD.
+    // Previously this handler cleared `_initialLayerLoadInProgress` and then called
+    // autoPreloadVideoLayer() for every video layer — i.e. a zoom kicked off the full
+    // ~16-frame preload (~190 requests), the exact cost we deliberately moved off the
+    // startup path. A zoom should be cheap: the base current-time grid (~12 tiles) is
+    // refetched by normal Leaflet behaviour, and the single current-time frame is
+    // restored above via the 100ms preloadSingleFrame pre-warm + restoreVideoFrameForZoom.
+    // The full preload now runs ONLY on Play (startAnimation → preloadAllFrames(true)) and
+    // on-demand scrub (date/day-slider change). So we intentionally do NOT clear the
+    // deferral guard and do NOT call autoPreloadVideoLayer / preloadAllFrames here.
+    // Any still-running animation is stopped in zoomstart, so there is no mid-playback
+    // re-warm to preserve: the next Play re-preloads for the current zoom (Play always
+    // force-preloads), which is correct and cheap.
 });
 
 // ═══════════════════════════════════════════════════════════════
