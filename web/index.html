@@ -39,18 +39,18 @@
             --glass-border: rgba(59, 130, 246, 0.14);
             --glass-blur: blur(24px) saturate(150%);
             --text-main: #f0f6ff;
-            --text-dim: #93c5fd;
-            --text-faint: #4b6fa5;
+            --text-dim: #bcd7ff;
+            --text-faint: #7f9fce;
             --bg-deep: #0a1628;
             --bg-panel: rgba(8, 20, 45, 0.92);
             --border: rgba(59, 130, 246, 0.14);
             /* Legacy aliases for JS-generated HTML */
             --primary-color: #60a5fa;
-            --secondary-color: #93c5fd;
+            --secondary-color: #bcd7ff;
             --accent-color: #f87171;
             --bg-dark: rgba(8, 20, 45, 0.94);
             --border-color: rgba(59, 130, 246, 0.14);
-            --text-secondary: #93c5fd;
+            --text-secondary: #bcd7ff;
             --success-color: #34d399;
             --warning-color: #fbbf24;
             --danger-color: #f87171;
@@ -1469,6 +1469,33 @@
                 min-width: 150px;
             }
         }
+
+        /* ── Global keyboard focus ring (keyboard nav only) ── */
+        :focus-visible {
+            outline: 2px solid var(--accent);
+            outline-offset: 2px;
+        }
+
+        /* ── Reduced-motion: neutralize animations/transitions (additive guard) ── */
+        @media (prefers-reduced-motion: reduce) {
+            /* Decorative CRT scanline overlay — remove for reduced-motion users */
+            .scanlines {
+                opacity: 0 !important;
+            }
+            /* WMS tile fade (Leaflet default tile opacity transition) */
+            .leaflet-tile {
+                transition: none !important;
+            }
+            /* Panel / menu transitions + any remaining animation */
+            .layer-bubble-menu,
+            .glass-panel,
+            .layer-group-content,
+            .active-layer-controls-card,
+            * {
+                transition: none !important;
+                animation: none !important;
+            }
+        }
     </style>
 
 </head>
@@ -1533,6 +1560,16 @@
             font-weight: 600;
             letter-spacing: 0.2px;
         }
+
+        /* ── Reduced-motion: stop the loading spinner (spin keyframes above) ── */
+        @media (prefers-reduced-motion: reduce) {
+            .spinner {
+                animation: none !important;
+            }
+            .loading-banner {
+                animation: none !important;
+            }
+        }
     </style>
 
 
@@ -1553,7 +1590,7 @@
                 <div style="width: 40px; height: 4px; background: rgba(255,255,255,0.2); border-radius: 2px;"></div>
                 <button id="minimize-bottom-panel"
                     style="position: absolute; right: 0; top: 0; background: none; border: none; color: var(--text-secondary); cursor: pointer; font-size: 14px;"
-                    title="Minimize Panel">
+                    title="Minimize Panel" aria-label="Minimize controls panel">
                     <i class="fa-solid fa-minus"></i>
                 </button>
             </div>
@@ -1607,20 +1644,20 @@
                     <div style="display: flex; flex-direction: column; gap: 6px; width: 100%;">
                         <!-- Date Stepper -->
                         <div style="display: flex; align-items: center; gap: 4px; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.2); border-radius: 6px; padding: 2px;">
-                            <button type="button" id="date-prev" class="time-stepper-btn" title="Previous Day">
+                            <button type="button" id="date-prev" class="time-stepper-btn" title="Previous Day" aria-label="Previous day">
                                 <i class="fa-solid fa-chevron-left"></i>
                             </button>
                             <input type="date" id="date-select"
                                 style="flex: 1; padding: 4px 2px; border: none; background: transparent; color: white; text-align: center; outline: none; font-size: 12px; font-weight: 500; font-family: inherit;">
-                            <button type="button" id="date-next" class="time-stepper-btn" title="Next Day">
+                            <button type="button" id="date-next" class="time-stepper-btn" title="Next Day" aria-label="Next day">
                                 <i class="fa-solid fa-chevron-right"></i>
                             </button>
                         </div>
                         
                         <!-- Hour Toggle -->
                         <div style="display: flex; align-items: center; gap: 4px; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.2); border-radius: 6px; padding: 2px;">
-                            <button type="button" id="hour-btn-00" class="hour-toggle-btn hour-toggle-active" data-hour="00" title="00:00 UTC">00:00</button>
-                            <button type="button" id="hour-btn-12" class="hour-toggle-btn" data-hour="12" title="12:00 UTC">12:00</button>
+                            <button type="button" id="hour-btn-00" class="hour-toggle-btn hour-toggle-active" data-hour="00" title="00:00 UTC" aria-label="Set time to 00:00 UTC">00:00</button>
+                            <button type="button" id="hour-btn-12" class="hour-toggle-btn" data-hour="12" title="12:00 UTC" aria-label="Set time to 12:00 UTC">12:00</button>
                             <span style="padding: 2px 6px; font-size: 10px; color: rgba(255,255,255,0.5); font-family: inherit;">UTC</span>
                             <!-- Hidden select kept for backwards compatibility with app.js listeners -->
                             <select id="hour-select" style="display:none;">
@@ -1655,17 +1692,17 @@
 
         <!-- Leaflet JS -->
         <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-        <script src="share.js?v=4"></script>
+        <script src="share.js?v=5"></script>
         <script src="wms-metadata.js?v=32"></script>
-        <script src="app.js?v=34"></script>
-        <script src="multi-layer.js?v=32"></script>
+        <script src="app.js?v=35"></script>
+        <script src="multi-layer.js?v=33"></script>
         <script src="ui-interactions.js?v=32"></script>
         <script src="country-info.js?v=2"></script>
 
         <!-- Restore buttons (hidden by default) -->
         <button id="restore-bottom-panel"
             style="display: none; position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); z-index: 1001; background: var(--bg-panel); border: 1px solid var(--border-color); color: var(--primary-color); border-radius: 22px; padding: 0 20px; height: 44px; box-shadow: 0 4px 12px rgba(0,0,0,0.3); cursor: pointer; align-items: center; justify-content: center; gap: 8px; font-weight: 600;"
-            title="Restore Controls">
+            title="Restore Controls" aria-label="Restore controls panel">
             <i class="fa-solid fa-sliders"></i> Controls
         </button>
 

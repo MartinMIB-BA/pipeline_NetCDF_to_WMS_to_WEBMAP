@@ -226,9 +226,9 @@ function initializeLayerList() {
                         <div class="layer-legend-title-row">
                             <div class="layer-legend-title">Legend</div>
                             <div class="layer-legend-scale">
-                                <button class="legend-scale-btn" data-legend="${layerId}" data-action="shrink" title="Zmenšiť">−</button>
-                                <button class="legend-scale-btn" data-legend="${layerId}" data-action="reset" title="Pôvodná veľkosť">↺</button>
-                                <button class="legend-scale-btn" data-legend="${layerId}" data-action="grow" title="Zväčšiť">+</button>
+                                <button class="legend-scale-btn" data-legend="${layerId}" data-action="shrink" title="Zmenšiť" aria-label="Zmenšiť legendu">−</button>
+                                <button class="legend-scale-btn" data-legend="${layerId}" data-action="reset" title="Pôvodná veľkosť" aria-label="Pôvodná veľkosť legendy">↺</button>
+                                <button class="legend-scale-btn" data-legend="${layerId}" data-action="grow" title="Zväčšiť" aria-label="Zväčšiť legendu">+</button>
                             </div>
                         </div>
                         <div class="layer-legend-content">
@@ -1140,13 +1140,13 @@ function updateBottomPanelLayers() {
                     <div class="active-layer-controls-header" draggable="true">
                         <i class="fa-solid fa-layer-group"></i>
                         <span>${displayName}</span>
-                        <button type="button" class="active-layer-visibility-btn" id="active-layer-visibility-${layerId}" data-layer-id="${layerId}" title="Toggle layer visibility">
+                        <button type="button" class="active-layer-visibility-btn" id="active-layer-visibility-${layerId}" data-layer-id="${layerId}" title="Toggle layer visibility" aria-label="Toggle visibility of layer ${displayName}">
                             <i class="fa-solid fa-eye"></i>
                         </button>
-                        <button type="button" class="active-layer-info-btn" id="active-layer-info-${layerId}" data-layer-id="${layerId}" title="Show legend">
+                        <button type="button" class="active-layer-info-btn" id="active-layer-info-${layerId}" data-layer-id="${layerId}" title="Show legend" aria-label="Show legend for ${displayName}">
                             <i class="fa-solid fa-circle-info"></i>
                         </button>
-                        <button type="button" class="active-layer-remove-btn" id="active-layer-remove-${layerId}" data-layer-id="${layerId}" title="Remove layer">
+                        <button type="button" class="active-layer-remove-btn" id="active-layer-remove-${layerId}" data-layer-id="${layerId}" title="Remove layer" aria-label="Remove layer ${displayName}">
                             <i class="fa-solid fa-xmark"></i>
                         </button>
                     </div>

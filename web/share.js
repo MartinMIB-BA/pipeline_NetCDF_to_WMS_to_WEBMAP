@@ -152,17 +152,11 @@ window._sharedState = (function () {
         const btn = document.createElement('button');
         btn.id = 'share-link-btn';
         btn.title = 'Copy shareable link';
+        btn.setAttribute('aria-label', 'Copy shareable link');
         btn.innerHTML = '<i class="fa-solid fa-link"></i>';
-        btn.addEventListener('click', () => {
-            const url = buildUrl();
-            const ta = document.createElement('textarea');
-            ta.value = url;
-            ta.style.position = 'fixed';
-            ta.style.opacity = '0';
-            document.body.appendChild(ta);
-            ta.select();
-            try { document.execCommand('copy'); } catch (_) { }
-            document.body.removeChild(ta);
+
+        // Green check confirmation, then restore after 2s (identical in both paths).
+        function showCopied() {
             btn.innerHTML = '<i class="fa-solid fa-check"></i>';
             btn.style.color = '#34d399';
             btn.style.borderColor = 'rgba(52,211,153,0.5)';
@@ -171,6 +165,31 @@ window._sharedState = (function () {
                 btn.style.color = '';
                 btn.style.borderColor = '';
             }, 2000);
+        }
+
+        // Legacy fallback for insecure contexts / older browsers.
+        function copyFallback(url) {
+            const ta = document.createElement('textarea');
+            ta.value = url;
+            ta.style.position = 'fixed';
+            ta.style.opacity = '0';
+            document.body.appendChild(ta);
+            ta.select();
+            try { document.execCommand('copy'); } catch (_) { }
+            document.body.removeChild(ta);
+            showCopied();
+        }
+
+        btn.addEventListener('click', () => {
+            const url = buildUrl();
+            // Try the async Clipboard API first (secure contexts / modern browsers).
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(url)
+                    .then(showCopied)
+                    .catch(() => copyFallback(url));
+            } else {
+                copyFallback(url);
+            }
         });
         document.body.appendChild(btn);
     }
