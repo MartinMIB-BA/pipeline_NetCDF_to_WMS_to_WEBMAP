@@ -120,7 +120,7 @@ const BASEMAP_OPTIONS = {
         name: 'Esri World Street (EN)',
         url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}',
         options: {
-            attribution: 'Tiles © Esri',
+            attribution: 'Tiles © Esri — Esri, DeLorme, NAVTEQ, USGS, Intermap, iPC, NRCAN, Esri Japan, METI, Esri China (Hong Kong), Esri (Thailand), TomTom',
             maxZoom: 19,
             minZoom: 2,
             pane: 'tilePane'
@@ -148,16 +148,16 @@ const BASEMAP_OPTIONS = {
     }
 };
 
-// Default basemap is OpenStreetMap: it serves tiles from 3 sharded subdomains
-// ({s}.tile.openstreetmap.org), so the browser can parallelise tile fetches across origins,
-// whereas the former default (GISCO Positron) is a single external origin that measured as the
-// slowest individual resource on cold loads (~5.7-7.2s/tile). GISCO Positron stays selectable in
-// the basemap switcher.
-let currentBaseMapId = 'osm';
+// Default basemap is Esri World Street Map: its raster tiles render ENGLISH / international
+// place labels ("Slovakia", "Germany") rather than local-language names ("Slovensko",
+// "Deutschland") baked into plain OSM tiles. It is a free, keyless source served from the fast
+// Esri CDN (measured fastest of the candidates in label verification), so it keeps the quick-load
+// benefit while giving English labels. Plain OSM and GISCO stay selectable in the switcher.
+let currentBaseMapId = 'esri_world_street';
 let baseLayer = null;
 
 function setBaseMap(baseMapId) {
-    const cfg = BASEMAP_OPTIONS[baseMapId] || BASEMAP_OPTIONS[currentBaseMapId] || BASEMAP_OPTIONS.osm;
+    const cfg = BASEMAP_OPTIONS[baseMapId] || BASEMAP_OPTIONS[currentBaseMapId] || BASEMAP_OPTIONS.esri_world_street;
     if (!cfg) return;
 
     if (baseLayer && map.hasLayer(baseLayer)) {
@@ -165,7 +165,7 @@ function setBaseMap(baseMapId) {
     }
 
     baseLayer = L.tileLayer(cfg.url, cfg.options).addTo(map);
-    currentBaseMapId = baseMapId in BASEMAP_OPTIONS ? baseMapId : 'osm';
+    currentBaseMapId = baseMapId in BASEMAP_OPTIONS ? baseMapId : 'esri_world_street';
     window.currentBaseMapId = currentBaseMapId;
     console.log(`🗺️ Basemap switched to: ${cfg.name}`);
 }
