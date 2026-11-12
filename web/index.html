@@ -20,16 +20,8 @@
     <!-- FontAwesome -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 
-    <!-- Theme FOUC guard: apply a stored theme before first paint (blocking, runs before stylesheets) -->
-    <script>
-        (function () { try { var t = localStorage.getItem('wms_theme'); if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t; } catch (e) { } })();
-    </script>
-
-    <link rel="stylesheet" href="tokens.css?v=1">
-    <link rel="stylesheet" href="styles.css?v=1">
-
-    <!-- Theme toggle wiring (icon + click handler); FOUC guard above handles first paint -->
-    <script src="theme.js?v=1"></script>
+    <link rel="stylesheet" href="tokens.css?v=2">
+    <link rel="stylesheet" href="styles.css?v=2">
 
 </head>
 
@@ -184,10 +176,6 @@
             <i class="fa-solid fa-sliders"></i> Controls
         </button>
 
-        <!-- Light/dark theme toggle (glass icon button, bottom-right above the share button) -->
-        <button id="theme-toggle-btn" title="Toggle light/dark theme" aria-label="Toggle light/dark theme">
-            <i class="fa-solid fa-moon"></i>
-        </button>
 
 </body>
 

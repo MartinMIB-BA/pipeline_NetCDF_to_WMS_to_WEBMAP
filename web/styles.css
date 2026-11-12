@@ -47,18 +47,6 @@
             z-index: 3;
         }
 
-        /* Light mode: a dark vignette over a light basemap looks wrong,
-           so reduce it to near-transparent (auto + manual paths). */
-        @media (prefers-color-scheme: light) {
-            :root:not([data-theme]) #map::after {
-                background: radial-gradient(ellipse at center, transparent 55%, rgba(0, 0, 0, 0.06) 100%);
-            }
-        }
-
-        :root[data-theme="light"] #map::after {
-            background: radial-gradient(ellipse at center, transparent 55%, rgba(0, 0, 0, 0.06) 100%);
-        }
-
         /* ═══════════════════════════════════════════════════════════════
            WINDY-STYLE RIGHT SIDEBAR
            ═══════════════════════════════════════════════════════════════ */
@@ -1485,9 +1473,8 @@
             }
         }
 
-        /* ── Share link + theme-toggle buttons (glass icon buttons) ── */
-        #share-link-btn,
-        #theme-toggle-btn {
+        /* ── Share link button (glass icon button) ── */
+        #share-link-btn {
             position: fixed; right: 16px; z-index: 1200;
             width: 44px; height: 44px; border-radius: 14px;
             border: 1px solid var(--glass-border);
@@ -1500,9 +1487,7 @@
             transition: all 0.2s ease;
         }
         #share-link-btn { bottom: 16px; }
-        #theme-toggle-btn { bottom: 72px; }
-        #share-link-btn:hover,
-        #theme-toggle-btn:hover {
+        #share-link-btn:hover {
             border-color: var(--accent-glow); background: var(--glass-bg);
             color: var(--accent); transform: translateY(-1px);
         }
