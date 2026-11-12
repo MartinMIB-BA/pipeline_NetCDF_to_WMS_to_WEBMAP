@@ -9,6 +9,16 @@
     <!-- Favicon: Metron logo (stylised "M" over waves) -->
     <link rel="icon" type="image/svg+xml" href="favicon.svg">
 
+    <!-- Basemap tile origins. OpenStreetMap is the default basemap (sharded across a/b/c
+         subdomains); GISCO is still selectable in the switcher, so warm its origin too. -->
+    <link rel="preconnect" href="https://a.tile.openstreetmap.org" crossorigin>
+    <link rel="preconnect" href="https://b.tile.openstreetmap.org" crossorigin>
+    <link rel="preconnect" href="https://c.tile.openstreetmap.org" crossorigin>
+    <link rel="dns-prefetch" href="https://a.tile.openstreetmap.org">
+    <link rel="dns-prefetch" href="https://b.tile.openstreetmap.org">
+    <link rel="dns-prefetch" href="https://c.tile.openstreetmap.org">
+    <link rel="dns-prefetch" href="https://gisco-services.ec.europa.eu">
+
     <!-- Leaflet CSS -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <!-- Google Fonts -->
@@ -140,11 +150,11 @@
                     <div style="margin-top: 6px;">
                         <label for="basemap-select"><i class="fa-solid fa-map"></i> Background Map</label>
                         <select id="basemap-select">
+                            <option value="osm" selected>OpenStreetMap</option>
                             <option value="gisco_positron">GISCO Positron (light)</option>
                             <option value="gisco_bright">GISCO Bright</option>
                             <option value="gisco_dark">GISCO Dark Gray</option>
                             <option value="esri_world_street">Esri World Street (EN)</option>
-                            <option value="osm">OpenStreetMap</option>
                             <option value="esri_satellite">Esri Satellite</option>
                         </select>
                     </div>
@@ -164,8 +174,8 @@
         <script src="toast.js?v=1"></script>
         <script src="share.js?v=7"></script>
         <script src="wms-metadata.js?v=32"></script>
-        <script src="app.js?v=37"></script>
-        <script src="multi-layer.js?v=35"></script>
+        <script src="app.js?v=38"></script>
+        <script src="multi-layer.js?v=36"></script>
         <script src="ui-interactions.js?v=32"></script>
         <script src="country-info.js?v=2"></script>
 

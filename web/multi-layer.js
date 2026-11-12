@@ -2077,13 +2077,13 @@ document.addEventListener('DOMContentLoaded', function () {
                     if (cb && !cb.checked) cb.click();
                 });
             } else {
-                // QW-2: mark the initial default-layer load so preloadAllFrames defers the
-                // 16-frame video burst until startup settles (frame 0 only on load; the rest
-                // load once the browser is idle). Cleared after a conservative startup window so
-                // later zoom/date re-preloads and Play take their normal full-preload paths.
+                // STARTUP PRELOAD GATE: mark the initial default-layer load so preloadAllFrames
+                // loads ONLY the base grid (+ opacity-0 frame 0) for each video layer and defers
+                // animation frames 1..N to the first real user action (Play/scrub/zoom). The flag
+                // is cleared by those user actions in app.js — NOT by a timer — so frames 1..N are
+                // never fetched during the initial page load.
                 if (!window._initialLayerLoadInProgress) {
                     window._initialLayerLoadInProgress = true;
-                    setTimeout(() => { window._initialLayerLoadInProgress = false; }, 4000);
                 }
 
                 // Default layers (bottom to top order):
@@ -2094,12 +2094,10 @@ document.addEventListener('DOMContentLoaded', function () {
                     choroplethCheckbox.click();
                 }
 
-                // 2. GloFAS reporting points
-                const reportingPointsCheckbox = document.getElementById('checkbox-reportingPoints');
-                if (reportingPointsCheckbox && !reportingPointsCheckbox.checked) {
-                    console.log('🚀 Auto-initializing default layer: reportingPoints');
-                    reportingPointsCheckbox.click();
-                }
+                // 2. GloFAS reporting points — lazy-loaded (opt-in), NOT auto-loaded at startup.
+                // This external third-party WMS (ows.globalfloods.eu) has uncontrollable latency
+                // and competes for the connection budget during first paint. The user can still
+                // toggle it on manually via its checkbox at any time.
 
                 // 3. TWL75 forecast (on top)
                 if (defaultCheckbox && !defaultCheckbox.checked) {

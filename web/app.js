@@ -148,11 +148,16 @@ const BASEMAP_OPTIONS = {
     }
 };
 
-let currentBaseMapId = 'gisco_positron';
+// Default basemap is OpenStreetMap: it serves tiles from 3 sharded subdomains
+// ({s}.tile.openstreetmap.org), so the browser can parallelise tile fetches across origins,
+// whereas the former default (GISCO Positron) is a single external origin that measured as the
+// slowest individual resource on cold loads (~5.7-7.2s/tile). GISCO Positron stays selectable in
+// the basemap switcher.
+let currentBaseMapId = 'osm';
 let baseLayer = null;
 
 function setBaseMap(baseMapId) {
-    const cfg = BASEMAP_OPTIONS[baseMapId] || BASEMAP_OPTIONS[currentBaseMapId] || BASEMAP_OPTIONS.gisco_positron;
+    const cfg = BASEMAP_OPTIONS[baseMapId] || BASEMAP_OPTIONS[currentBaseMapId] || BASEMAP_OPTIONS.osm;
     if (!cfg) return;
 
     if (baseLayer && map.hasLayer(baseLayer)) {
@@ -160,7 +165,7 @@ function setBaseMap(baseMapId) {
     }
 
     baseLayer = L.tileLayer(cfg.url, cfg.options).addTo(map);
-    currentBaseMapId = baseMapId in BASEMAP_OPTIONS ? baseMapId : 'gisco_positron';
+    currentBaseMapId = baseMapId in BASEMAP_OPTIONS ? baseMapId : 'osm';
     window.currentBaseMapId = currentBaseMapId;
     console.log(`🗺️ Basemap switched to: ${cfg.name}`);
 }
@@ -1613,49 +1618,21 @@ async function preloadAllFrames(forceAllFrames = false) {
             return false;
         }
 
-        // QW-2: INITIAL-LOAD DEFERRAL. During the default-layer startup window the seeded path
-        // would normally fire all 16 frames at once (6 HTTP/1.1 connections saturated), starving
-        // the choropleth + GloFAS + static requests and making first paint slow/inconsistent.
-        // On initial load (and NOT when the user clicked Play → forceAllFrames) preload frame 0
-        // only — done above — then schedule frames 1..N once the browser is idle, using the SAME
-        // staggered background pattern as the non-seeded path. Play (forceAllFrames) and all
-        // post-startup re-preloads are unaffected and still fully preload.
+        // STARTUP PRELOAD DEFERRAL (replaces the former QW-2 idle-timer reshuffle).
+        // On the initial page-load window the seeded path would fire all 16 frames per video
+        // layer (twl75 AND epis_wl75) at once, which is ~90% of startup request volume and the
+        // dominant first-paint cost. We now load ONLY the base grid (shown by the layer's
+        // baseWmsPane) plus the single opacity-0 frame 0 (done above) and fire NOTHING else on
+        // startup. Frames 1..N are deferred to the first real user action — Play
+        // (forceAllFrames → full preload here) or scrubbing the day slider (loads frames
+        // on demand via preloadSingleFrame). The `_initialLayerLoadInProgress` gate is cleared
+        // by the first user action (Play / date-change / zoom), NOT by a timer, so no background
+        // self-re-queue ever fetches frames 1..N during the initial load. This applies to every
+        // video layer because preloadAllFrames is layer-agnostic.
         if (window._initialLayerLoadInProgress && !forceAllFrames && totalFrames > 1) {
-            console.log(`⏳ [INITIAL LOAD] Frame 0 ready — deferring frames 1-${totalFrames-1} until idle (QW-2)`);
+            console.log(`⏳ [INITIAL LOAD] Frame 0 ready for ${currentParams.layer} — deferring frames 1-${totalFrames-1} until first Play/scrub`);
             playBtn.innerHTML = originalText;
             console.timeEnd('⏱️ Total preload time');
-
-            const layerSnapshot = currentParams.layer;
-            const timeSnapshot = currentParams.time;
-
-            const warmRemaining = () => {
-                // Re-check guards: layer still active + still current + nothing else driving frames.
-                if (currentParams.layer !== layerSnapshot || currentParams.time !== timeSnapshot
-                        || window.isAnimating || window.isAnimationLoading) {
-                    return;
-                }
-                window.isBackgroundWarming = true;
-                (async () => {
-                    try {
-                        for (let i = 1; i < totalFrames; i += 2) {
-                            if (currentParams.layer !== layerSnapshot || currentParams.time !== timeSnapshot
-                                    || window.isAnimating || window.isAnimationLoading) break;
-                            const batch = [preloadFrame(i, null, currentZoom)];
-                            if (i + 1 < totalFrames) batch.push(preloadFrame(i + 1, null, currentZoom));
-                            await Promise.all(batch);
-                            await new Promise(r => setTimeout(r, 400));
-                        }
-                    } finally {
-                        window.isBackgroundWarming = false;
-                    }
-                })();
-            };
-
-            if (typeof window.requestIdleCallback === 'function') {
-                window.requestIdleCallback(warmRemaining, { timeout: 4000 });
-            } else {
-                setTimeout(warmRemaining, 2500);
-            }
             return true;
         }
 
@@ -1817,6 +1794,10 @@ async function startAnimation(skipPreload = false) {
         console.warn('⚠️ Animation already running');
         return;
     }
+
+    // First real user action ends the startup window: from now on auto-preload takes its
+    // normal full path (the startup-only frame-0 deferral above no longer applies).
+    window._initialLayerLoadInProgress = false;
 
     // If background auto-preload is running, abort it and take over with Play
     if (window.isAnimationLoading) {
@@ -2543,6 +2524,9 @@ document.getElementById('time-select').addEventListener('change', (e) => {
     // Clear video caches so new TIME actually loads fresh frames.
     // clearAnimationCacheForLayer also aborts in-flight tile requests to free connection slots.
     if (currentMeta && currentMeta.type === 'video') {
+        // A date/scrub change is a real user action — end the startup window so the auto-preload
+        // below does its normal full preload rather than the startup frame-0-only deferral.
+        window._initialLayerLoadInProgress = false;
         clearAnimationCacheForLayer(currentParams.layer);
         // Debounce auto-preload: if user is clicking rapidly through dates/hours,
         // wait 300ms after the last click before starting preload.
@@ -2827,6 +2811,10 @@ map.on('zoomend', function () {
             }
         });
     }
+
+    // A zoom is a real user action — end the startup window so the re-preload below runs its
+    // normal full path instead of the startup frame-0-only deferral.
+    window._initialLayerLoadInProgress = false;
 
     // Re-preload video frames for the new zoom so slider stays smooth after zooming.
     // Pre-seeded zoom (≤4): all 16 frames. Non-seeded zoom (5+): frame 0 only (see preloadAllFrames).
