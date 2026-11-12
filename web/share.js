@@ -194,27 +194,7 @@ window._sharedState = (function () {
         document.body.appendChild(btn);
     }
 
-    // ── CSS ─────────────────────────────────────────────────────
-    const style = document.createElement('style');
-    style.textContent = `
-        #share-link-btn {
-            position: fixed; bottom: 16px; right: 16px; z-index: 1200;
-            width: 44px; height: 44px; border-radius: 14px;
-            border: 1px solid rgba(59,130,246,0.16);
-            background: rgba(8,20,45,0.82);
-            backdrop-filter: blur(28px) saturate(160%);
-            -webkit-backdrop-filter: blur(28px) saturate(160%);
-            color: #93c5fd; font-size: 16px; cursor: pointer;
-            display: flex; align-items: center; justify-content: center;
-            box-shadow: 0 20px 60px -15px rgba(0,0,0,0.8), inset 0 1px 0 rgba(125,180,255,0.07);
-            transition: all 0.2s ease;
-        }
-        #share-link-btn:hover {
-            border-color: rgba(6,182,212,0.3); background: rgba(8,20,45,0.92);
-            color: #fff; transform: translateY(-1px);
-        }
-    `;
-    document.head.appendChild(style);
+    // ── CSS moved to styles.css (#share-link-btn) ───────────────
 
     // ── Init passive parts once DOM + map are ready ────────────
     function init() {
