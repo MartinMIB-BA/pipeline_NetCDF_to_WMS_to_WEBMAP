@@ -2524,19 +2524,25 @@ document.getElementById('time-select').addEventListener('change', (e) => {
     // Clear video caches so new TIME actually loads fresh frames.
     // clearAnimationCacheForLayer also aborts in-flight tile requests to free connection slots.
     if (currentMeta && currentMeta.type === 'video') {
-        // A date/scrub change is a real user action — end the startup window so the auto-preload
-        // below does its normal full preload rather than the startup frame-0-only deferral.
+        // A date/scrub change is a real user action — end the startup window so the
+        // single-frame load below is not suppressed by the startup frame-0-only deferral.
         window._initialLayerLoadInProgress = false;
         clearAnimationCacheForLayer(currentParams.layer);
-        // Debounce auto-preload: if user is clicking rapidly through dates/hours,
-        // wait 300ms after the last click before starting preload.
-        // Eliminates hundreds of stale tile requests flooding the connection pool.
-        const layerToPreload = currentParams.layer;
+        // DO NOT auto-fire the full 16-frame preload on a date change. The full preload
+        // (~204 requests per video layer) must run ONLY on an explicit Play press
+        // (startAnimation → preloadAllFrames(true)). A date change — even while the
+        // animation was playing (stopped above) — should at most refresh the base grid
+        // (handled by debouncedTimeUpdate() below, ~12 tiles) and load the SINGLE frame
+        // for the newly selected day on demand, exactly like the zoom fix does. Debounce
+        // so rapid date/hour clicking doesn't flood the connection pool with stale frames.
+        // Layer-agnostic: applies to both twl75 and epis_wl75.
+        const layerToLoad = currentParams.layer;
+        const dayToLoad = currentParams.elevation;
         clearTimeout(autoPreloadDebounceTimer);
         autoPreloadDebounceTimer = setTimeout(() => {
-            if (window.autoPreloadVideoLayer && !window.isAnimating && !window.isAnimationLoading
-                    && window.activeLayers && window.activeLayers.has(layerToPreload)) {
-                window.autoPreloadVideoLayer(layerToPreload);
+            if (window.preloadSingleFrame && !window.isAnimating && !window.isAnimationLoading
+                    && window.activeLayers && window.activeLayers.has(layerToLoad)) {
+                window.preloadSingleFrame(layerToLoad, dayToLoad);
             }
         }, 300);
     }
