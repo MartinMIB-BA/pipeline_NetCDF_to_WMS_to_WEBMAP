@@ -33,3 +33,91 @@
             --danger-color: #f87171;
         }
 
+/* ═══════════════════════════════════════════════════════════════
+   THEMING (V1) — the :root block above stays the DARK default.
+   Light values are applied automatically when the OS prefers light
+   AND the user has NOT made a manual choice; an explicit
+   [data-theme] always wins. Default stays DARK (no OS light pref
+   and nothing stored => dark). Glassmorphism is preserved in both
+   themes; hazard aliases (--danger/-warning/-success/-accent-color)
+   are intentionally theme-invariant.
+   ═══════════════════════════════════════════════════════════════ */
+
+        /* Light values — shared by the auto media-query path and the
+           manual [data-theme="light"] path. */
+        @media (prefers-color-scheme: light) {
+            :root:not([data-theme]) {
+                --primary: #2563eb;
+                --primary-dim: rgba(37, 99, 235, 0.12);
+                --primary-glow: rgba(37, 99, 235, 0.30);
+                --primary-border: rgba(37, 99, 235, 0.28);
+                --accent: #06b6d4;
+                --accent-glow: rgba(6, 182, 212, 0.40);
+                --glass-bg: rgba(255, 255, 255, 0.78);
+                --glass-bg-light: rgba(0, 0, 0, 0.04);
+                --glass-border: rgba(30, 64, 120, 0.18);
+                --text-main: #0f1f3a;
+                --text-dim: #335074;
+                --text-faint: #5f7797;
+                --bg-deep: #eef3fb;
+                --bg-panel: rgba(255, 255, 255, 0.92);
+                --border: rgba(30, 64, 120, 0.18);
+                /* Legacy aliases mirrored to the light values */
+                --primary-color: #2563eb;
+                --secondary-color: #335074;
+                --bg-dark: rgba(255, 255, 255, 0.94);
+                --border-color: rgba(30, 64, 120, 0.18);
+                --text-secondary: #335074;
+            }
+        }
+
+        :root[data-theme="light"] {
+            --primary: #2563eb;
+            --primary-dim: rgba(37, 99, 235, 0.12);
+            --primary-glow: rgba(37, 99, 235, 0.30);
+            --primary-border: rgba(37, 99, 235, 0.28);
+            --accent: #06b6d4;
+            --accent-glow: rgba(6, 182, 212, 0.40);
+            --glass-bg: rgba(255, 255, 255, 0.78);
+            --glass-bg-light: rgba(0, 0, 0, 0.04);
+            --glass-border: rgba(30, 64, 120, 0.18);
+            --text-main: #0f1f3a;
+            --text-dim: #335074;
+            --text-faint: #5f7797;
+            --bg-deep: #eef3fb;
+            --bg-panel: rgba(255, 255, 255, 0.92);
+            --border: rgba(30, 64, 120, 0.18);
+            /* Legacy aliases mirrored to the light values */
+            --primary-color: #2563eb;
+            --secondary-color: #335074;
+            --bg-dark: rgba(255, 255, 255, 0.94);
+            --border-color: rgba(30, 64, 120, 0.18);
+            --text-secondary: #335074;
+        }
+
+        /* Explicit dark choice mirrors the :root dark defaults so a
+           manual toggle to dark overrides a light OS preference. */
+        :root[data-theme="dark"] {
+            --primary: #60a5fa;
+            --primary-dim: rgba(59, 130, 246, 0.18);
+            --primary-glow: rgba(59, 130, 246, 0.45);
+            --primary-border: rgba(59, 130, 246, 0.28);
+            --accent: #06b6d4;
+            --accent-glow: rgba(6, 182, 212, 0.40);
+            --glass-bg: rgba(8, 20, 45, 0.80);
+            --glass-bg-light: rgba(255, 255, 255, 0.05);
+            --glass-border: rgba(59, 130, 246, 0.14);
+            --text-main: #f0f6ff;
+            --text-dim: #bcd7ff;
+            --text-faint: #7f9fce;
+            --bg-deep: #0a1628;
+            --bg-panel: rgba(8, 20, 45, 0.92);
+            --border: rgba(59, 130, 246, 0.14);
+            /* Legacy aliases mirrored to the dark values */
+            --primary-color: #60a5fa;
+            --secondary-color: #bcd7ff;
+            --bg-dark: rgba(8, 20, 45, 0.94);
+            --border-color: rgba(59, 130, 246, 0.14);
+            --text-secondary: #bcd7ff;
+        }
+
