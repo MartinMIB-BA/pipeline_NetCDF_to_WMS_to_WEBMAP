@@ -61,7 +61,11 @@ PURGE_DAYS  = 14                         # truncate tiles older than N days
 AUTH = (GEOSERVER_USER, GEOSERVER_PASS)
 
 # ─── Nginx warm-up config ───────────────────────────────────────────────────────
-NGINX_WARMUP_URL  = os.environ.get("NGINX_WARMUP_URL", "http://localhost")
+# Warm-up must hit the `web` container's GWC vhost (shares the gwc_cache zone with
+# the production :80 vhost). Default is the host-published :8082 — NOT :80, which
+# since 2026-11-12 belongs to Nginx Proxy Manager and 404s on /geoserver/gwc/,
+# silently warming 0 tiles. Override via NGINX_WARMUP_URL in scripts/.env.
+NGINX_WARMUP_URL  = os.environ.get("NGINX_WARMUP_URL", "http://localhost:8082")
 READY_DATES_PATH  = os.environ.get("READY_DATES_PATH", "/opt/geoserver/web/ready_dates.json")
 WARMUP_WORKERS    = 20                   # parallel curl-like requests for nginx warm-up
 GWC_POLL_INTERVAL = 30                   # seconds between GWC status polls
@@ -813,18 +817,19 @@ def run_seed(dry_run: bool = False, truncate_only: bool = False, days: int = 7):
         print(f"\n{'='*60}")
         print("  Truncate-only mode — skipping GWC wait and nginx warm-up.")
         print(f"{'='*60}\n")
-        return
+        return True
 
     if not seeded_data:
         print(f"\n{'='*60}")
         print("  No layers were seeded — skipping warm-up and ready_dates update.")
         print(f"{'='*60}\n")
-        return
+        return True
 
     # ── Phase 2: Wait for GWC to finish, then warm nginx ──────────────────
     all_seeded_times: list[str] = []
     gwc_failed = False
     verify_failed = False
+    warmup_failed = False
 
     for layer, (recent_times, elevations) in seeded_data.items():
         print(f"\n🕐 Phase 2 — {layer}")
@@ -835,7 +840,12 @@ def run_seed(dry_run: bool = False, truncate_only: bool = False, days: int = 7):
             print(f"  ⚠️  GWC timeout for {layer} — skipping nginx warm-up for this layer")
             continue
 
-        run_nginx_warmup(layer, recent_times, elevations, bboxes, dry_run=dry_run)
+        # run_nginx_warmup returns False if ANY tile request failed. Previously
+        # its result was discarded, so a 100%-failed warm-up (e.g. warm-up URL
+        # pointing at the wrong vhost → every request 404s) slipped through as a
+        # successful run. Treat a failed warm-up as a hard failure.
+        if not run_nginx_warmup(layer, recent_times, elevations, bboxes, dry_run=dry_run):
+            warmup_failed = True
         all_seeded_times.extend(recent_times)
 
         if not verify_nginx_warmup(layer, recent_times, elevations, bboxes, dry_run=dry_run):
@@ -854,7 +864,14 @@ def run_seed(dry_run: bool = False, truncate_only: bool = False, days: int = 7):
         print("  ⚠️  No layers completed warm-up — ready_dates.json not updated")
 
     print(f"\n{'='*60}")
-    if gwc_failed:
+    if warmup_failed:
+        print("  ❌ Nginx warm-up FAILED — tile requests did not populate the proxy")
+        print("      cache (e.g. every request errored/404'd). The GWC tiles were")
+        print("      seeded, but the browser-facing nginx cache is NOT warm, so the")
+        print("      next users will hit a cold cache. Check NGINX_WARMUP_URL (must")
+        print("      point at the web container's GWC vhost, NOT the NPM entry point)")
+        print("      and the X-Cache-Status warnings above.")
+    elif gwc_failed:
         print("  ⚠️  Finished with GWC timeout(s). Check GeoServer logs.")
     elif verify_failed:
         print("  ⚠️  Finished, but cache verification found a low hit ratio for at")
@@ -864,6 +881,10 @@ def run_seed(dry_run: bool = False, truncate_only: bool = False, days: int = 7):
     else:
         print("  ✅ GWC seeding + nginx warm-up complete. Cache verification OK.")
     print(f"{'='*60}\n")
+
+    # Report failure to the caller so the cron wrapper can surface it (non-zero
+    # exit → "Seeding FAILED" email) instead of silently reporting OK.
+    return not (warmup_failed or gwc_failed)
 
 
 # ─── Entry point ───────────────────────────────────────────────────────────────
@@ -875,4 +896,7 @@ if __name__ == "__main__":
     parser.add_argument("--days",          type=int, default=14, help="How many days back to seed (default: 14)")
     args = parser.parse_args()
 
-    run_seed(dry_run=args.dry_run, truncate_only=args.truncate_only, days=args.days)
+    ok = run_seed(dry_run=args.dry_run, truncate_only=args.truncate_only, days=args.days)
+    # Non-zero exit on warm-up/GWC failure so run_wms_and_seed.sh marks the run
+    # FAILED and emails an alert, instead of masking a cold cache as "OK".
+    sys.exit(0 if ok else 1)
