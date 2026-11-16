@@ -10,7 +10,24 @@ production serve today.
 | Path | Entry | How it loads | Served by nginx today? |
 |------|-------|--------------|------------------------|
 | **Legacy (live)** | `index.html` | 8 global `<script>` tags in a hand-tuned order (`leaflet.js` CDN then the 7 app files), manual `?v=NN` cache-busters, CDN `<link>`s for Leaflet CSS / Google Fonts / FontAwesome | **Yes** — this is the file nginx serves |
-| **Vite (built artifact)** | `index.vite.html` → `main.js` | one `<script type="module">`; Leaflet (JS+CSS), FontAwesome, Inter + JetBrains Mono fonts and the local `tokens.css`/`styles.css` are imported through the bundler (self-hosted, content-hashed) | **No** — built to `dist/`, not yet wired into any server |
+| **Vite (source entry)** | `app-src/index.html` → `../main.js` | one `<script type="module">`; Leaflet (JS+CSS), FontAwesome, Inter + JetBrains Mono fonts and the local `tokens.css`/`styles.css` are imported through the bundler (self-hosted, content-hashed) | **No** — built to `dist/`, not yet wired into any server |
+
+### Why the Vite entry lives in `web/app-src/`
+
+The standard Vite entry name is `index.html`, but the legacy buildless app already
+owns `web/index.html` (and nginx serves it today). Putting the Vite entry in its own
+subdirectory (`web/app-src/index.html`) lets it keep the **standard `index.html` name**
+without colliding, and — with `root` set to `app-src` in `vite.config.js` — lets Vite
+emit it to the **dist root as `dist/index.html`**. That is what makes the built app
+served correctly at the site root `/`:
+
+- `vite preview` serves the app at `http://localhost:<port>/` (root, no filename).
+- A future nginx `root dist/` with the default `index index.html` plus
+  `try_files $uri $uri/ /index.html` works with **no special-casing** (no
+  `index.vite.html` filename, no try_files hacks).
+
+`base: './'` keeps the built asset URLs relative (`./assets/*`), so they resolve from
+the served document's directory regardless of mount path.
 
 `main.js` imports the seven existing app files **in the exact legacy order** as
 side-effecting modules (`toast → share → wms-metadata → app → multi-layer →
@@ -30,11 +47,24 @@ npm run build # Vite build -> web/dist/
 
 `npm run build` emits `web/dist/` containing:
 
-- a content-hashed JS bundle (`dist/assets/index.vite-*.js`),
+- `dist/index.html` — the standard-named entry **at the dist root**, wired to the
+  hashed bundles (served at `/`),
+- a content-hashed JS bundle (`dist/assets/index-*.js`),
 - a content-hashed CSS bundle (`dist/assets/index-*.css`),
 - the self-hosted Leaflet, FontAwesome and Inter/JetBrains Mono font assets
-  (`dist/assets/*.woff2`, `*.woff`, `*.ttf`, Leaflet marker images),
-- `dist/index.vite.html` wired to the hashed bundles.
+  (`dist/assets/*.woff2`, `*.woff`, `*.ttf`, Leaflet marker images).
+
+## Preview it (local check)
+
+```sh
+cd web
+npm run preview   # serves web/dist/ at http://localhost:4173/
+```
+
+Open `http://localhost:4173/` (root, no filename) — the app loads from
+`dist/index.html` and its hashed `/assets/*` bundle. On localhost the app talks to the
+**production GeoServer** (`http://89.47.190.54/geoserver`) by design (`window.isLocalhost`
+branch), so map tiles load from prod during local preview; that is expected.
 
 The built HTML/JS/CSS contains **no** `unpkg.com`, `cdnjs`, `fonts.googleapis.com`
 or `fonts.gstatic.com` URLs — all former CDN deps are same-origin. (The
@@ -60,8 +90,9 @@ Phase 2 repoints the server at the build output. It must:
 
 1. Add `npm ci && npm run build` to the deploy scripts (`deploy.sh`,
    `deploy-staging.sh` — both git-ignored local files, not versioned here).
-2. Repoint the nginx `root` from `web/` to `web/dist/` (and decide whether the
-   served entry is `index.vite.html` or a renamed `index.html`).
+2. Repoint the nginx `root` from `web/` to `web/dist/`. The build now emits
+   `dist/index.html` at the dist root, so the default `index index.html` plus
+   `try_files $uri $uri/ /index.html` serves it at `/` with no special-casing.
 3. **Infra caveat (steering):** nginx config is a **bind mount** — changes need
    `docker compose restart web`, **not** `nginx -s reload`. Infra changes ship
    from the **`main`** branch only; a JS change on `develop` reaches staging

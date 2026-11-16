@@ -7,7 +7,7 @@
     <title>Copernicus EMS - Floods | Testing Environment</title>
 
     <!-- Favicon: Metron logo (stylised "M" over waves) -->
-    <link rel="icon" type="image/svg+xml" href="favicon.svg">
+    <link rel="icon" type="image/svg+xml" href="../favicon.svg">
 
     <!-- Basemap tile origins. Esri World Street Map (English labels) is the default basemap and
          serves from a single origin; OSM and GISCO stay selectable in the switcher, so warm their
@@ -18,11 +18,13 @@
     <link rel="dns-prefetch" href="https://a.tile.openstreetmap.org">
     <link rel="dns-prefetch" href="https://gisco-services.ec.europa.eu">
 
-    <!-- Phase 1 Vite entry. Leaflet (JS+CSS), FontAwesome, Inter + JetBrains Mono fonts and the
-         local tokens/styles CSS are all imported (self-hosted, content-hashed) via main.js, so
-         there are NO CDN <link>/<script> tags and NO manual ?v= cache-busters here. The legacy
-         buildless index.html keeps its CDN tags untouched and is what nginx serves today. -->
-    <script type="module" src="/main.js"></script>
+    <!-- Vite entry. This file lives in web/app-src/ so it can be named index.html (the
+         standard entry name) WITHOUT colliding with the legacy buildless web/index.html that
+         nginx serves today. Vite emits it to dist/index.html served at the site root "/".
+         Leaflet (JS+CSS), FontAwesome, Inter + JetBrains Mono fonts and the local tokens/styles
+         CSS are all imported (self-hosted, content-hashed) via main.js, so there are NO CDN
+         <link>/<script> tags and NO manual ?v= cache-busters here. -->
+    <script type="module" src="../main.js"></script>
 
 </head>
 
