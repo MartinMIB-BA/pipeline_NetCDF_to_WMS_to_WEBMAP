@@ -148,14 +148,24 @@ class WMSMetadata {
             dateToHours.get(dateStr).add(hourStr);
         };
 
-        // Video layers publish a fixed 00:00Z + 12:00Z daily cadence. GeoServer,
-        // however, describes their TIME dimension as an interval with a bogus
-        // period derived from irregular granules (e.g. "P8M2WT16H"), which no
-        // sane parser can turn into a 12-hour step. For these layers we KNOW the
-        // real cadence, so force a 12-hour expansion step and skip the heuristics.
+        // Every forecast layer on this server (video, probability, summary)
+        // publishes a fixed 00:00Z + 12:00Z daily cadence. GeoServer, however,
+        // describes each TIME dimension as a DISCRETE_INTERVAL with a single
+        // collapsed, bogus period spanning the whole range (e.g. "P9M1W2DT18H"
+        // for summary layers, "P8M2WT16H" for video). Parsing that period yields
+        // one giant step, so the expansion produces only the start date and the
+        // real end date (e.g. the latest granule) never lands on a step — which
+        // is why the summary calendar's "latest date" was wrong while video
+        // layers (previously the only ones hard-coded to 12h) looked fine.
+        //
+        // The explicit video list is kept as a fast-path, but any layer whose
+        // advertised period is implausibly large for a sub-daily forecast
+        // cadence is also forced to the known 12-hour step (see the bogus-period
+        // guard in the expansion loop below).
+        const FIXED_12H = 12 * 60 * 60 * 1000;
         const VIDEO_LAYERS_FIXED_12H = ['twl75', 'epis_wl75'];
         const forceStepMs = VIDEO_LAYERS_FIXED_12H.includes(layerId)
-            ? 12 * 60 * 60 * 1000
+            ? FIXED_12H
             : null;
 
         // ISO-8601 duration parser. Supports W (weeks), Y/M (years/months, as
@@ -193,6 +203,12 @@ class WMSMetadata {
 
         const MAX_EXPAND = 2000;
 
+        // A period is "bogus" when GeoServer collapsed a regular sub-daily cadence
+        // into one giant interval step. Any forecast layer here steps every 12h, so
+        // a parsed period of 2 days or more cannot be the true cadence — when the
+        // start/end hours differ (00Z vs 12Z) we know the real step is 12 hours.
+        const TWO_DAYS_MS = 2 * 24 * 60 * 60 * 1000;
+
         layerData.times.forEach(t => {
             if (!t) return;
             if (t.includes('/')) {
@@ -201,6 +217,14 @@ class WMSMetadata {
                 const end = new Date(parts[1]);
                 // Priority: forced video step > parsed period > inferred heuristic.
                 let stepMs = forceStepMs || (parts[2] ? parseDurationToMs(parts[2]) : null);
+                // Guard against GeoServer's collapsed DISCRETE_INTERVAL period: if the
+                // parsed step is implausibly large for a sub-daily forecast cadence,
+                // discard it and fall back to the 12-hour cadence this server uses.
+                if (stepMs && !forceStepMs && stepMs >= TWO_DAYS_MS) {
+                    const hoursDiffer = !isNaN(start.getTime()) && !isNaN(end.getTime())
+                        && start.getUTCHours() !== end.getUTCHours();
+                    stepMs = hoursDiffer ? FIXED_12H : 24 * 60 * 60 * 1000;
+                }
                 if (!stepMs) stepMs = inferStepMs(start, end);
                 if (!isNaN(start.getTime()) && !isNaN(end.getTime()) && stepMs) {
                     let count = 0;

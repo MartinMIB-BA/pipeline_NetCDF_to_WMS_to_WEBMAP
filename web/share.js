@@ -44,6 +44,22 @@ window._sharedState = (function () {
             state.layers = Array.from(window.activeLayers.keys()).join(',');
         }
         if (window.currentBaseMapId) state.base = window.currentBaseMapId;
+
+        // Open GetFeatureInfo popups (read-only): share just the clicked points.
+        // Each point's values + charts are re-queried live on restore.
+        if (typeof window.getClickPoints === 'function') {
+            const pts = window.getClickPoints();
+            if (pts && pts.length > 0) {
+                state.pts = pts.map(p => `${p.lat},${p.lng}`).join(';');
+            }
+        }
+
+        // Open Country Info panel (land click) — share its clicked point so the
+        // panel reopens and re-queries country data live on restore.
+        if (typeof window.getOpenCountryPoint === 'function') {
+            const cp = window.getOpenCountryPoint();
+            if (cp) state.ci = `${cp.lat},${cp.lng}`;
+        }
         return state;
     }
 
@@ -79,14 +95,81 @@ window._sharedState = (function () {
         }
     }
 
+    // ── Restore shared GetFeatureInfo popups ───────────────────
+    // Replays each clicked point once an overlay WMS layer is actually on the
+    // map (getFeatureInfo bails out with no visible overlay). Read-only: it just
+    // re-issues the same query a user click would. Gives up after ~20s.
+    function restoreClickPoints() {
+        const s = window._sharedState;
+        if (!s) return;
+        const haveSeaPts = s.pts && typeof window.restoreClickPoint === 'function';
+        const haveCountryPt = s.ci && typeof window.restoreCountryPoint === 'function';
+        if (!haveSeaPts && !haveCountryPt) return;
+
+        const points = (haveSeaPts ? s.pts.split(';') : []).map(pair => {
+            const [lat, lng] = pair.split(',').map(parseFloat);
+            return (isFinite(lat) && isFinite(lng)) ? { lat, lng } : null;
+        }).filter(Boolean);
+
+        let countryPt = null;
+        if (haveCountryPt) {
+            const [lat, lng] = s.ci.split(',').map(parseFloat);
+            if (isFinite(lat) && isFinite(lng)) countryPt = { lat, lng };
+        }
+        if (points.length === 0 && !countryPt) return;
+        console.log('🔗 restoreClickPoints: will restore', points.length, 'sea point(s) and',
+            countryPt ? '1 country point' : 'no country point');
+
+        function hasVisibleOverlay() {
+            if (!window.map || typeof window.map.eachLayer !== 'function') return false;
+            let count = 0;
+            window.map.eachLayer(layer => {
+                if (layer && layer.wmsParams && layer.wmsParams.layers) count++;
+            });
+            return count > 0;
+        }
+
+        let tries = 0;
+        const poll = setInterval(() => {
+            tries++;
+            if (hasVisibleOverlay()) {
+                clearInterval(poll);
+                console.log('🔗 restoreClickPoints: overlay ready after', tries * 100, 'ms — replaying');
+                // Small delay so layer params (TIME etc.) are fully settled.
+                setTimeout(() => {
+                    points.forEach(p => window.restoreClickPoint(p.lat, p.lng));
+                    if (countryPt) window.restoreCountryPoint(countryPt.lat, countryPt.lng);
+                }, 800);
+            } else if (tries > 300) {
+                clearInterval(poll);
+                console.warn('🔗 restoreClickPoints: gave up waiting for a visible overlay layer (30s)');
+            }
+        }, 100);
+    }
+
     // ── Copy Link button ───────────────────────────────────────
     function createButton() {
         const btn = document.createElement('button');
         btn.id = 'share-link-btn';
         btn.title = 'Copy shareable link';
+        btn.setAttribute('aria-label', 'Copy shareable link');
         btn.innerHTML = '<i class="fa-solid fa-link"></i>';
-        btn.addEventListener('click', () => {
-            const url = buildUrl();
+
+        // Green check confirmation, then restore after 2s (identical in both paths).
+        function showCopied() {
+            btn.innerHTML = '<i class="fa-solid fa-check"></i>';
+            btn.style.color = '#34d399';
+            btn.style.borderColor = 'rgba(52,211,153,0.5)';
+            if (typeof window.showToast === 'function') window.showToast('Link copied', 'success');
+            setTimeout(() => {
+                btn.innerHTML = '<i class="fa-solid fa-link"></i>';
+                btn.style.color = '';
+                btn.style.borderColor = '';
+            }, 2000);
+        }
+
+        // Legacy fallback for insecure contexts / older browsers.
+        function copyFallback(url) {
             const ta = document.createElement('textarea');
             ta.value = url;
             ta.style.position = 'fixed';
@@ -95,39 +178,24 @@ window._sharedState = (function () {
             ta.select();
             try { document.execCommand('copy'); } catch (_) { }
             document.body.removeChild(ta);
-            btn.innerHTML = '<i class="fa-solid fa-check"></i>';
-            btn.style.color = '#34d399';
-            btn.style.borderColor = 'rgba(52,211,153,0.5)';
-            setTimeout(() => {
-                btn.innerHTML = '<i class="fa-solid fa-link"></i>';
-                btn.style.color = '';
-                btn.style.borderColor = '';
-            }, 2000);
+            showCopied();
+        }
+
+        btn.addEventListener('click', () => {
+            const url = buildUrl();
+            // Try the async Clipboard API first (secure contexts / modern browsers).
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(url)
+                    .then(showCopied)
+                    .catch(() => copyFallback(url));
+            } else {
+                copyFallback(url);
+            }
         });
         document.body.appendChild(btn);
     }
 
-    // ── CSS ─────────────────────────────────────────────────────
-    const style = document.createElement('style');
-    style.textContent = `
-        #share-link-btn {
-            position: fixed; bottom: 16px; right: 16px; z-index: 1200;
-            width: 44px; height: 44px; border-radius: 14px;
-            border: 1px solid rgba(59,130,246,0.16);
-            background: rgba(8,20,45,0.82);
-            backdrop-filter: blur(28px) saturate(160%);
-            -webkit-backdrop-filter: blur(28px) saturate(160%);
-            color: #93c5fd; font-size: 16px; cursor: pointer;
-            display: flex; align-items: center; justify-content: center;
-            box-shadow: 0 20px 60px -15px rgba(0,0,0,0.8), inset 0 1px 0 rgba(125,180,255,0.07);
-            transition: all 0.2s ease;
-        }
-        #share-link-btn:hover {
-            border-color: rgba(6,182,212,0.3); background: rgba(8,20,45,0.92);
-            color: #fff; transform: translateY(-1px);
-        }
-    `;
-    document.head.appendChild(style);
+    // ── CSS moved to styles.css (#share-link-btn) ───────────────
 
     // ── Init passive parts once DOM + map are ready ────────────
     function init() {
@@ -146,6 +214,12 @@ window._sharedState = (function () {
                 const panel = document.getElementById('active-layers-panel');
                 if (panel) new MutationObserver(scheduleHashUpdate)
                     .observe(panel, { childList: true, subtree: true });
+                // Open/close of GetFeatureInfo popups → update hash
+                window.onClickPointsChange = scheduleHashUpdate;
+                // Open/close of Country Info panel → update hash
+                window.onCountryInfoChange = scheduleHashUpdate;
+                // Re-open shared popups once layers are ready
+                restoreClickPoints();
             } else if (tries > 50) {
                 clearInterval(poll);
             }

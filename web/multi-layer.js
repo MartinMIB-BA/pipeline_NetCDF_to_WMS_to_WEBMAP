@@ -226,9 +226,9 @@ function initializeLayerList() {
                         <div class="layer-legend-title-row">
                             <div class="layer-legend-title">Legend</div>
                             <div class="layer-legend-scale">
-                                <button class="legend-scale-btn" data-legend="${layerId}" data-action="shrink" title="Zmenšiť">−</button>
-                                <button class="legend-scale-btn" data-legend="${layerId}" data-action="reset" title="Pôvodná veľkosť">↺</button>
-                                <button class="legend-scale-btn" data-legend="${layerId}" data-action="grow" title="Zväčšiť">+</button>
+                                <button class="legend-scale-btn" data-legend="${layerId}" data-action="shrink" title="Zmenšiť" aria-label="Zmenšiť legendu">−</button>
+                                <button class="legend-scale-btn" data-legend="${layerId}" data-action="reset" title="Pôvodná veľkosť" aria-label="Pôvodná veľkosť legendy">↺</button>
+                                <button class="legend-scale-btn" data-legend="${layerId}" data-action="grow" title="Zväčšiť" aria-label="Zväčšiť legendu">+</button>
                             </div>
                         </div>
                         <div class="layer-legend-content">
@@ -686,9 +686,17 @@ document.addEventListener('click', function (e) {
     const current = parseInt(img.dataset.scale || '100', 10);
     let next = current;
 
+    // Reset returns to the fitted base: clear inline overrides so the CSS
+    // (width:100%; max-width:100%) governs again — identical to first-open.
+    if (btn.dataset.action === 'reset') {
+        img.dataset.scale = '100';
+        img.style.width = '';
+        img.style.maxWidth = '';
+        return;
+    }
+
     if (btn.dataset.action === 'grow')   next = Math.min(current + STEP, 200);
     if (btn.dataset.action === 'shrink') next = Math.max(current - STEP, 20);
-    if (btn.dataset.action === 'reset')  next = 100;
 
     img.dataset.scale = next;
     img.style.width = `${next}%`;
@@ -780,10 +788,19 @@ function addLayer(layerId) {
         initialTime = null;
     }
 
-    // Choropleth layers WITH time: let GeoServer use default (latest week)
-    // Don't send TIME on initial load — GeoServer's "Use biggest domain value" handles it
+    // Choropleth layers WITH time: resolve the matching forecast week UP FRONT so the FIRST
+    // GetMap already carries the concrete TIME. This stops the old "add with time:null →
+    // syncChoroplethToGlobalDate immediately re-params with a real TIME → aborts the in-flight
+    // no-TIME GetMap" ERR_ABORTED storm (QW-1). The guard in syncChoroplethToGlobalDate then sees
+    // layerData.time === matchedWeek and skips the redundant re-param on initial load.
+    // Fall back to null (GeoServer picks latest) only when the date is uncovered.
     if (metadata && metadata.type === 'choropleth' && metadata.hasTime) {
-        initialTime = null;
+        const choroSel = document.getElementById('time-select');
+        const choroSelVal = (choroSel && choroSel.value && choroSel.value.length >= 16)
+            ? choroSel.value.slice(0, 16)
+            : null;
+        const resolvedWeek = resolveChoroplethWeek(layerId, choroSelVal);
+        initialTime = resolvedWeek || null;
     }
 
     let initialElevation = 0;
@@ -943,6 +960,9 @@ function addLayer(layerId) {
         tileSuccessCount = 0;
         _layersWithNoData.delete(layerId);
         _updateNoDataOverlay();
+        // QW-4: drive the honest loading overlay off real tile events. Exclude external GloFAS
+        // layers (isGlofas) — their out-of-our-control latency must not hold our spinner.
+        if (!isGlofas && window.beginLayerLoading) window.beginLayerLoading(layerId);
     });
 
     // At least one tile succeeded — this layer has data
@@ -955,6 +975,9 @@ function addLayer(layerId) {
     // All tiles finished — if every tile failed, mark this layer as no-data
     // (Choropleth layers are excluded — they always have data from PostGIS join)
     wmsLayer.on('load', function () {
+        // QW-4: tiles settled — clear this layer's loading state (runs for choropleth too, which
+        // drives the overlay but is still excluded from no-data tracking by the early-return below).
+        if (!isGlofas && window.endLayerLoading) window.endLayerLoading(layerId);
         if (metadata && metadata.type === 'choropleth') return; // skip no-data tracking
         if (tileSuccessCount === 0 && tileErrorCount > 0) {
             _layersWithNoData.add(layerId);
@@ -1039,6 +1062,10 @@ function removeLayer(layerId) {
     // Remove from no-data tracking — if this was the only failing layer, hide overlay
     _layersWithNoData.delete(layerId);
     _updateNoDataOverlay();
+
+    // QW-4: clear any pending loading state for this layer so removing a mid-load layer
+    // can't leave the spinner stuck.
+    if (window.endLayerLoading) window.endLayerLoading(layerId);
 
     // Remove from map
     if (window.map && window.map.hasLayer(layerData.wmsLayer)) {
@@ -1132,11 +1159,14 @@ function updateBottomPanelLayers() {
                     <div class="active-layer-controls-header" draggable="true">
                         <i class="fa-solid fa-layer-group"></i>
                         <span>${displayName}</span>
-                        <button type="button" class="active-layer-visibility-btn" id="active-layer-visibility-${layerId}" data-layer-id="${layerId}" title="Toggle layer visibility">
+                        <button type="button" class="active-layer-visibility-btn" id="active-layer-visibility-${layerId}" data-layer-id="${layerId}" title="Toggle layer visibility" aria-label="Toggle visibility of layer ${displayName}">
                             <i class="fa-solid fa-eye"></i>
                         </button>
-                        <button type="button" class="active-layer-info-btn" id="active-layer-info-${layerId}" data-layer-id="${layerId}" title="Show legend">
+                        <button type="button" class="active-layer-info-btn" id="active-layer-info-${layerId}" data-layer-id="${layerId}" title="Show legend" aria-label="Show legend for ${displayName}">
                             <i class="fa-solid fa-circle-info"></i>
+                        </button>
+                        <button type="button" class="active-layer-remove-btn" id="active-layer-remove-${layerId}" data-layer-id="${layerId}" title="Remove layer" aria-label="Remove layer ${displayName}">
+                            <i class="fa-solid fa-xmark"></i>
                         </button>
                     </div>
                     <div class="active-layer-controls-body" id="active-layer-controls-body-${layerId}">
@@ -1152,6 +1182,7 @@ function updateBottomPanelLayers() {
             const legendHost = document.getElementById(`active-layer-legend-host-${layerId}`);
             const infoBtn = document.getElementById(`active-layer-info-${layerId}`);
             const visBtn = document.getElementById(`active-layer-visibility-${layerId}`);
+            const removeBtn = document.getElementById(`active-layer-remove-${layerId}`);
 
             if (legendHost && legendEl && legendEl.parentElement !== legendHost) {
                 legendEl.style.display = 'none';
@@ -1179,6 +1210,21 @@ function updateBottomPanelLayers() {
                 });
             }
 
+            if (removeBtn && !removeBtn.dataset.bound) {
+                removeBtn.dataset.bound = '1';
+                removeBtn.addEventListener('click', function () {
+                    removeLayer(layerId);
+                    // Keep the hidden-panel checkbox in sync so the bubble toggle
+                    // highlight and category count badge reset to the off state
+                    // (mirrors the bubble-bar click handler).
+                    const originalCheckbox = document.getElementById(`checkbox-${layerId}`);
+                    if (originalCheckbox) {
+                        originalCheckbox.checked = false;
+                    }
+                    syncLayerBubbleState();
+                });
+            }
+
             updateLayerVisibilityButton(layerId);
             updateVideoPlayButtonVisibilityState(layerId);
 
@@ -1189,6 +1235,10 @@ function updateBottomPanelLayers() {
         });
 
         applyMapZOrderFromPanel();
+
+        // Auto-hide the first-load onboarding hint (U4) as soon as any layer
+        // becomes active — reuses the existing activeLayers state, no new source.
+        if (typeof window.maybeHideOnboarding === 'function') window.maybeHideOnboarding();
     } catch (err) {
         console.error('❌ updateBottomPanelLayers error:', err);
     }
@@ -1353,6 +1403,66 @@ function setLayerVisibility(layerId, visible) {
 const initializedControls = new Set();
 
 /**
+ * Resolve the forecast-week ISO string that covers `selectedDateStr` for a choropleth layer.
+ * Returns the matched week (an ISO string from the layer's time dimension), or `null` when the
+ * selected date is uncovered (before earliest week / past coverageEnd / no weeks available).
+ *
+ * This is the single source of truth for the week-matching rules, shared by addLayer (so the
+ * FIRST GetMap already carries the final TIME) and syncChoroplethToGlobalDate (so a redundant
+ * re-param can be skipped). Matching rules mirror the original inline loop exactly:
+ *   - earliest-week lower bound (before weeks[0] → null)
+ *   - "largest week <= selected date"
+ *   - coverageEnd = matchedWeek + 7 days (exclusive) upper bound
+ *
+ * Week source, in order: window._choroplethWeeks[layerId] if present, else a sorted list derived
+ * from window.wmsMetadata.layers.get(layerId).times (the Set parsed from GetCapabilities), else [].
+ */
+function resolveChoroplethWeek(layerId, selectedDateStr) {
+    if (!selectedDateStr) return null;
+    // selectedDateStr is the time-select value (YYYY-MM-DDTHH:mm); normalise to UTC like the
+    // original sync did (new Date(value + ':00.000Z')).
+    const selectedDate = new Date(selectedDateStr + ':00.000Z');
+    if (isNaN(selectedDate.getTime())) return null;
+
+    let weeks = (window._choroplethWeeks && window._choroplethWeeks[layerId]) || null;
+    if (!weeks || weeks.length === 0) {
+        // Fall back to the GetCapabilities-parsed time Set (available at auto-init time, before
+        // the async _choroplethWeeks fetch resolves).
+        if (window.wmsMetadata && window.wmsMetadata.layers) {
+            const md = window.wmsMetadata.layers.get(layerId);
+            if (md && md.times && md.times.size > 0) {
+                weeks = Array.from(md.times).map(t => t.trim()).sort();
+            }
+        }
+    }
+    if (!weeks || weeks.length === 0) return null;
+
+    // Selected date before the earliest available forecast week → no data
+    const earliestWeek = new Date(weeks[0]);
+    if (selectedDate < earliestWeek) return null;
+
+    // Find the forecast week that contains the selected date
+    // (largest forecast_date that is <= selected date)
+    let matchedWeek = weeks[0];
+    for (const w of weeks) {
+        const wDate = new Date(w);
+        if (wDate <= selectedDate) {
+            matchedWeek = w;
+        } else {
+            break;
+        }
+    }
+
+    // A forecast week covers [forecast_date, forecast_date + 6 days]; past that window → no data
+    const coverageEnd = new Date(matchedWeek);
+    coverageEnd.setUTCDate(coverageEnd.getUTCDate() + 7);   // exclusive end
+    if (selectedDate >= coverageEnd) return null;
+
+    return matchedWeek;
+}
+window.resolveChoroplethWeek = resolveChoroplethWeek;
+
+/**
  * Sync all choropleth layers to the correct forecast week for the current global date.
  * Finds the forecast_date that covers the selected date (closest <= selected date).
  * Updates tiles + week label.
@@ -1361,12 +1471,9 @@ function syncChoroplethToGlobalDate() {
     const timeSelect = document.getElementById('time-select');
     if (!timeSelect || !timeSelect.value) return;
 
-    const selectedDate = new Date(timeSelect.value + ':00.000Z');
-
     activeLayers.forEach((layerData, layerId) => {
         if (!layerData.metadata || layerData.metadata.type !== 'choropleth' || !layerData.metadata.hasTime) return;
 
-        const weeks = (window._choroplethWeeks && window._choroplethWeeks[layerId]) || [];
         const weekLabel = document.getElementById(`week-label-${layerId}`);
 
         // The global calendar is never constrained by hazard layers — instead,
@@ -1383,48 +1490,31 @@ function syncChoroplethToGlobalDate() {
             layerData.time = null;
         };
 
-        if (weeks.length === 0) {
+        // Single source of truth for matching (shared with addLayer).
+        const matchedWeek = resolveChoroplethWeek(layerId, timeSelect.value);
+        if (!matchedWeek) {
             showNoData();
             return;
         }
 
-        // Selected date before the earliest available forecast week → no data
-        const earliestWeek = new Date(weeks[0]);
-        if (selectedDate < earliestWeek) {
-            showNoData();
-            return;
-        }
+        // GUARD: if the layer is already on the map AND already parameterized with the matched
+        // week, skip the remove/re-add + refreshLayerTiles. On initial load addLayer now creates
+        // the layer with its final TIME, so this guard fires on the first sync and prevents the
+        // redundant re-param that would ABORT the in-flight first GetMap (the ERR_ABORTED storm).
+        // A real date change produces a different matchedWeek → guard does NOT fire → tiles update.
+        const alreadyOnCorrectWeek =
+            layerData.time === matchedWeek &&
+            layerData.wmsLayer && window.map && window.map.hasLayer(layerData.wmsLayer);
 
-        // Find the forecast week that contains the selected date
-        // (largest forecast_date that is <= selected date)
-        let matchedWeek = weeks[0];
-        for (const w of weeks) {
-            const wDate = new Date(w);
-            if (wDate <= selectedDate) {
-                matchedWeek = w;
-            } else {
-                break;
+        if (!alreadyOnCorrectWeek) {
+            // Restore layer if it was hidden
+            if (layerData.wmsLayer && window.map && !window.map.hasLayer(layerData.wmsLayer) && !layerData.hidden) {
+                layerData.wmsLayer.addTo(window.map);
             }
-        }
 
-        // A forecast week covers [forecast_date, forecast_date + 6 days].
-        // If the selected date falls past that window (beyond the newest week,
-        // or into a gap left by a missed weekly ingest), there is no hazard
-        // data for it — say so instead of silently showing an older week.
-        const coverageEnd = new Date(matchedWeek);
-        coverageEnd.setUTCDate(coverageEnd.getUTCDate() + 7);   // exclusive end
-        if (selectedDate >= coverageEnd) {
-            showNoData();
-            return;
+            // Update tiles
+            refreshLayerTiles(layerId, layerData, { time: matchedWeek });
         }
-
-        // Restore layer if it was hidden
-        if (layerData.wmsLayer && window.map && !window.map.hasLayer(layerData.wmsLayer) && !layerData.hidden) {
-            layerData.wmsLayer.addTo(window.map);
-        }
-
-        // Update tiles
-        refreshLayerTiles(layerId, layerData, { time: matchedWeek });
 
         // Update week label (show range: forecast_date to forecast_date + 6 days)
         if (weekLabel) {
@@ -1771,8 +1861,8 @@ function checkLayerDataAvailability(layerId, time, elevation) {
 function checkAllLayersAvailability() {
     if (activeLayers.size === 0) return;
 
-    // Show loading spinner (briefly, mostly for consistency/debounce visualization)
-    if (window.showLoadingOverlay) window.showLoadingOverlay();
+    // QW-4: no longer show/hide the loading overlay here — it is driven by real tile
+    // loading/load events (begin/endLayerLoading) instead of this synchronous metadata check.
 
     console.log('🔍 Checking all layers (Local Metadata)...');
 
@@ -1789,8 +1879,7 @@ function checkAllLayersAvailability() {
 
     // Since checks are now synchronous, we can process immediately
     // Artificial delay removed as local check is instant
-
-    if (window.hideLoadingOverlay) window.hideLoadingOverlay();
+    // QW-4: no hideLoadingOverlay() here — the overlay is event-driven now.
 
     const hasData = checks.some(r => r === true);
 
@@ -1988,6 +2077,16 @@ document.addEventListener('DOMContentLoaded', function () {
                     if (cb && !cb.checked) cb.click();
                 });
             } else {
+                // STARTUP PRELOAD GATE: mark the initial default-layer load so preloadAllFrames
+                // loads ONLY the base grid (+ opacity-0 frame 0) for each video layer and defers
+                // animation frames 1..N to the first real user action — Play or scrubbing the day
+                // slider (NOT zoom; zooming must stay cheap and never preload). The flag is cleared
+                // by those user actions in app.js — NOT by a timer — so frames 1..N are never
+                // fetched during the initial page load.
+                if (!window._initialLayerLoadInProgress) {
+                    window._initialLayerLoadInProgress = true;
+                }
+
                 // Default layers (bottom to top order):
                 // 1. Country Risk choropleth (base context layer)
                 const choroplethCheckbox = document.getElementById('checkbox-country_twl_summary');
@@ -1996,12 +2095,10 @@ document.addEventListener('DOMContentLoaded', function () {
                     choroplethCheckbox.click();
                 }
 
-                // 2. GloFAS reporting points
-                const reportingPointsCheckbox = document.getElementById('checkbox-reportingPoints');
-                if (reportingPointsCheckbox && !reportingPointsCheckbox.checked) {
-                    console.log('🚀 Auto-initializing default layer: reportingPoints');
-                    reportingPointsCheckbox.click();
-                }
+                // 2. GloFAS reporting points — lazy-loaded (opt-in), NOT auto-loaded at startup.
+                // This external third-party WMS (ows.globalfloods.eu) has uncontrollable latency
+                // and competes for the connection budget during first paint. The user can still
+                // toggle it on manually via its checkbox at any time.
 
                 // 3. TWL75 forecast (on top)
                 if (defaultCheckbox && !defaultCheckbox.checked) {

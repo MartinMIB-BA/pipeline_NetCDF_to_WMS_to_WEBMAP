@@ -11,13 +11,16 @@ const GWC_MAX_SEEDED_ZOOM = 4;
 window.GWC_MAX_SEEDED_ZOOM = GWC_MAX_SEEDED_ZOOM;
 const GWC_LAYERS = ['twl75', 'epis_wl75'];
 
+// External GloFAS (Global Flood Awareness System) WMS endpoint, shared by all GloFAS layers below.
+const GLOFAS_WMS_URL = 'https://ows.globalfloods.eu/glofas-ows/ows.py';
+
 // ═══════════════════════════════════════════════════════════════
 // SERVER PROTECTION: Prevent accidental GeoServer overload
 // ═══════════════════════════════════════════════════════════════
 const SERVER_PROTECTION = {
     enabled: true,
     maxTabs: 2,  // Warn if more than 2 tabs open
-    tabId: Math.random().toString(36).substr(2, 9),
+    tabId: Math.random().toString(36).slice(2, 11),
     checkInterval: 5000  // Check every 5 seconds
 };
 
@@ -120,7 +123,7 @@ const BASEMAP_OPTIONS = {
         name: 'Esri World Street (EN)',
         url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}',
         options: {
-            attribution: 'Tiles © Esri',
+            attribution: 'Tiles © Esri — Esri, DeLorme, NAVTEQ, USGS, Intermap, iPC, NRCAN, Esri Japan, METI, Esri China (Hong Kong), Esri (Thailand), TomTom',
             maxZoom: 19,
             minZoom: 2,
             pane: 'tilePane'
@@ -148,11 +151,16 @@ const BASEMAP_OPTIONS = {
     }
 };
 
-let currentBaseMapId = 'gisco_positron';
+// Default basemap is Esri World Street Map: its raster tiles render ENGLISH / international
+// place labels ("Slovakia", "Germany") rather than local-language names ("Slovensko",
+// "Deutschland") baked into plain OSM tiles. It is a free, keyless source served from the fast
+// Esri CDN (measured fastest of the candidates in label verification), so it keeps the quick-load
+// benefit while giving English labels. Plain OSM and GISCO stay selectable in the switcher.
+let currentBaseMapId = 'esri_world_street';
 let baseLayer = null;
 
 function setBaseMap(baseMapId) {
-    const cfg = BASEMAP_OPTIONS[baseMapId] || BASEMAP_OPTIONS[currentBaseMapId] || BASEMAP_OPTIONS.gisco_positron;
+    const cfg = BASEMAP_OPTIONS[baseMapId] || BASEMAP_OPTIONS[currentBaseMapId] || BASEMAP_OPTIONS.esri_world_street;
     if (!cfg) return;
 
     if (baseLayer && map.hasLayer(baseLayer)) {
@@ -160,7 +168,7 @@ function setBaseMap(baseMapId) {
     }
 
     baseLayer = L.tileLayer(cfg.url, cfg.options).addTo(map);
-    currentBaseMapId = baseMapId in BASEMAP_OPTIONS ? baseMapId : 'gisco_positron';
+    currentBaseMapId = baseMapId in BASEMAP_OPTIONS ? baseMapId : 'esri_world_street';
     window.currentBaseMapId = currentBaseMapId;
     console.log(`🗺️ Basemap switched to: ${cfg.name}`);
 }
@@ -494,18 +502,18 @@ const layerMetadata = {
     'twl75': { type: 'video', hasElevation: true, description: 'Total water level 75th percentile (with lead time)' },
 
     // ── GloFAS layers (external WMS) ──────────────────────────────
-    'RPGM': { type: 'glofas', hasElevation: false, wmsUrl: 'https://ows.globalfloods.eu/glofas-ows/ows.py', description: 'Medium alert — return period > 2 years' },
-    'RPGH': { type: 'glofas', hasElevation: false, wmsUrl: 'https://ows.globalfloods.eu/glofas-ows/ows.py', description: 'High alert — return period > 5 years' },
-    'RPGS': { type: 'glofas', hasElevation: false, wmsUrl: 'https://ows.globalfloods.eu/glofas-ows/ows.py', description: 'Severe alert — return period > 20 years' },
-    'sumAL41EGE': { type: 'glofas', hasElevation: false, wmsUrl: 'https://ows.globalfloods.eu/glofas-ows/ows.py', description: 'Flood summary days 1–3' },
-    'sumAL42EGE': { type: 'glofas', hasElevation: false, wmsUrl: 'https://ows.globalfloods.eu/glofas-ows/ows.py', description: 'Flood summary days 4–10' },
-    'sumAL43EGE': { type: 'glofas', hasElevation: false, wmsUrl: 'https://ows.globalfloods.eu/glofas-ows/ows.py', description: 'Flood summary days 11–15' },
-    'FloodSummary1_30': { type: 'glofas', hasElevation: false, wmsUrl: 'https://ows.globalfloods.eu/glofas-ows/ows.py', description: 'Flood summary days 1–15' },
-    'EGE_probRgt50': { type: 'glofas', hasElevation: false, wmsUrl: 'https://ows.globalfloods.eu/glofas-ows/ows.py', description: 'Precipitation probability > 50 mm' },
-    'EGE_probRgt150': { type: 'glofas', hasElevation: false, wmsUrl: 'https://ows.globalfloods.eu/glofas-ows/ows.py', description: 'Precipitation probability > 150 mm' },
-    'AccRainEGE': { type: 'glofas', hasElevation: false, wmsUrl: 'https://ows.globalfloods.eu/glofas-ows/ows.py', description: 'Accumulated precipitation' },
-    'FloodHazard100y': { type: 'glofas', hasElevation: false, wmsUrl: 'https://ows.globalfloods.eu/glofas-ows/ows.py', description: 'Flood hazard — 100 year return period (static)' },
-    'reportingPoints': { type: 'glofas', hasElevation: false, wmsUrl: 'https://ows.globalfloods.eu/glofas-ows/ows.py', requiresTime: true, description: 'Reporting Points', legendHtml: `
+    'RPGM': { type: 'glofas', hasElevation: false, wmsUrl: GLOFAS_WMS_URL, description: 'Medium alert — return period > 2 years' },
+    'RPGH': { type: 'glofas', hasElevation: false, wmsUrl: GLOFAS_WMS_URL, description: 'High alert — return period > 5 years' },
+    'RPGS': { type: 'glofas', hasElevation: false, wmsUrl: GLOFAS_WMS_URL, description: 'Severe alert — return period > 20 years' },
+    'sumAL41EGE': { type: 'glofas', hasElevation: false, wmsUrl: GLOFAS_WMS_URL, description: 'Flood summary days 1–3' },
+    'sumAL42EGE': { type: 'glofas', hasElevation: false, wmsUrl: GLOFAS_WMS_URL, description: 'Flood summary days 4–10' },
+    'sumAL43EGE': { type: 'glofas', hasElevation: false, wmsUrl: GLOFAS_WMS_URL, description: 'Flood summary days 11–15' },
+    'FloodSummary1_30': { type: 'glofas', hasElevation: false, wmsUrl: GLOFAS_WMS_URL, description: 'Flood summary days 1–15' },
+    'EGE_probRgt50': { type: 'glofas', hasElevation: false, wmsUrl: GLOFAS_WMS_URL, description: 'Precipitation probability > 50 mm' },
+    'EGE_probRgt150': { type: 'glofas', hasElevation: false, wmsUrl: GLOFAS_WMS_URL, description: 'Precipitation probability > 150 mm' },
+    'AccRainEGE': { type: 'glofas', hasElevation: false, wmsUrl: GLOFAS_WMS_URL, description: 'Accumulated precipitation' },
+    'FloodHazard100y': { type: 'glofas', hasElevation: false, wmsUrl: GLOFAS_WMS_URL, description: 'Flood hazard — 100 year return period (static)' },
+    'reportingPoints': { type: 'glofas', hasElevation: false, wmsUrl: GLOFAS_WMS_URL, requiresTime: true, description: 'Reporting Points', legendHtml: `
         <div style="font-size:11px;line-height:1.6;padding:2px 0;">
             <div style="font-weight:600;margin-bottom:4px;color:var(--text-dim);">Flood Intensity</div>
             <div style="display:flex;align-items:center;gap:7px;margin-bottom:3px;"><span style="width:11px;height:11px;border-radius:50%;background:#9333ea;flex-shrink:0;display:inline-block;"></span>20-year RP</div>
@@ -564,6 +572,10 @@ function hideNoDataOverlay() {
     }
 }
 
+// Transient toasts now use the shared window.showToast utility (toast.js),
+// which renders its own bottom-center element and no longer reuses the
+// #no-data-overlay banner (so the real "no data" text is never clobbered).
+
 // ═══════════════════════════════════════════════════════════════
 // LOADING SPINNER FUNCTIONS
 // ═══════════════════════════════════════════════════════════════
@@ -578,11 +590,52 @@ function hideLoadingOverlay() {
     if (overlay) overlay.style.display = 'none';
 }
 
+// ───────────────────────────────────────────────────────────────
+// QW-4: HONEST, TILE-DRIVEN LOADING STATE
+// Instead of showing/hiding the overlay right after a synchronous metadata check, drive it off
+// REAL Leaflet WMS tile events: beginLayerLoading() on 'loading', endLayerLoading() on 'load'.
+// A watchdog timer guarantees the spinner can never stick visible (force-clears after a bound).
+// ───────────────────────────────────────────────────────────────
+const _layersLoadingTiles = new Set();
+let _loadingWatchdog = null;
+const LOADING_WATCHDOG_MS = 8000;
+
+function _clearLoadingWatchdog() {
+    if (_loadingWatchdog) {
+        clearTimeout(_loadingWatchdog);
+        _loadingWatchdog = null;
+    }
+}
+
+function beginLayerLoading(layerId) {
+    if (!layerId) return;
+    _layersLoadingTiles.add(layerId);
+    showLoadingOverlay();
+    // (Re)arm the safety timeout so a layer that never fires 'load' can't hold the spinner forever.
+    _clearLoadingWatchdog();
+    _loadingWatchdog = setTimeout(() => {
+        _layersLoadingTiles.clear();
+        _loadingWatchdog = null;
+        hideLoadingOverlay();
+    }, LOADING_WATCHDOG_MS);
+}
+
+function endLayerLoading(layerId) {
+    if (!layerId) return;
+    _layersLoadingTiles.delete(layerId);
+    if (_layersLoadingTiles.size === 0) {
+        _clearLoadingWatchdog();
+        hideLoadingOverlay();
+    }
+}
+
 // Export to window for multi-layer.js
 window.showNoDataOverlay = showNoDataOverlay;
 window.hideNoDataOverlay = hideNoDataOverlay;
 window.showLoadingOverlay = showLoadingOverlay;
 window.hideLoadingOverlay = hideLoadingOverlay;
+window.beginLayerLoading = beginLayerLoading;
+window.endLayerLoading = endLayerLoading;
 
 // ═══════════════════════════════════════════════════════════════
 // CRITICAL FIX: Robust Rendering & Error Handling
@@ -1012,8 +1065,8 @@ async function updateWMSParams() {
 
     console.log(`📝 Updating params (Cycle #${currentLoadCycleId})`);
 
-    // UI Updates
-    if (window.showLoadingOverlay) window.showLoadingOverlay(); // Show spinner
+    // QW-4: overlay is now driven by real tile loading/load events (begin/endLayerLoading),
+    // not by this synchronous param update — removed the show-then-hide-after-metadata-check.
 
     // If multi-layer system is active, refreshLayerTiles already called setParams+redraw
     // for all active layers — skip here to prevent a second (duplicate) redraw.
@@ -1035,7 +1088,7 @@ async function updateWMSParams() {
     // This shows banner IMMEDIATELY without waiting for tiles
     await checkDataAvailability();
 
-    if (window.hideLoadingOverlay) window.hideLoadingOverlay(); // Hide spinner
+    // QW-4: no hideLoadingOverlay() here — endLayerLoading() hides it when tiles actually settle.
 
     updateLayerInfo();
 }
@@ -1568,6 +1621,24 @@ async function preloadAllFrames(forceAllFrames = false) {
             return false;
         }
 
+        // STARTUP PRELOAD DEFERRAL (replaces the former QW-2 idle-timer reshuffle).
+        // On the initial page-load window the seeded path would fire all 16 frames per video
+        // layer (twl75 AND epis_wl75) at once, which is ~90% of startup request volume and the
+        // dominant first-paint cost. We now load ONLY the base grid (shown by the layer's
+        // baseWmsPane) plus the single opacity-0 frame 0 (done above) and fire NOTHING else on
+        // startup. Frames 1..N are deferred to the first real user action — Play
+        // (forceAllFrames → full preload here) or scrubbing the day slider (loads frames
+        // on demand via preloadSingleFrame). The `_initialLayerLoadInProgress` gate is cleared
+        // by the first user action (Play / date-change scrub), NOT by zoom and NOT by a timer, so
+        // no background self-re-queue — and no zoom — ever fetches frames 1..N. This applies to
+        // every video layer because preloadAllFrames is layer-agnostic.
+        if (window._initialLayerLoadInProgress && !forceAllFrames && totalFrames > 1) {
+            console.log(`⏳ [INITIAL LOAD] Frame 0 ready for ${currentParams.layer} — deferring frames 1-${totalFrames-1} until first Play/scrub`);
+            playBtn.innerHTML = originalText;
+            console.timeEnd('⏱️ Total preload time');
+            return true;
+        }
+
         // Non-seeded zoom (auto-preload only): load frame 0 immediately (already done above),
         // then warm up remaining frames 2 at a time in the background with 400ms gaps.
         // This avoids flooding GeoServer (first render from TIFF) while still warming Nginx cache
@@ -1727,6 +1798,10 @@ async function startAnimation(skipPreload = false) {
         return;
     }
 
+    // First real user action ends the startup window: from now on auto-preload takes its
+    // normal full path (the startup-only frame-0 deferral above no longer applies).
+    window._initialLayerLoadInProgress = false;
+
     // If background auto-preload is running, abort it and take over with Play
     if (window.isAnimationLoading) {
         console.log('⚡ Play clicked during auto-preload — aborting background load, taking over');
@@ -1754,7 +1829,7 @@ async function startAnimation(skipPreload = false) {
     const currentZoomForAnim = getCurrentZoomLevel();
     if (currentZoomForAnim > GWC_MAX_SEEDED_ZOOM) {
         console.warn(`⚠️ Animation blocked at zoom ${currentZoomForAnim} — only available at zoom ≤ ${GWC_MAX_SEEDED_ZOOM}`);
-        alert(`Animation is only available at zoom level ${GWC_MAX_SEEDED_ZOOM} or lower.\nPlease zoom out to play the animation.`);
+        if (typeof window.showToast === 'function') window.showToast('Animation is only available at zoom level ' + GWC_MAX_SEEDED_ZOOM + ' or lower. Zoom out to play.', 'warning');
         return;
     }
 
@@ -2169,36 +2244,47 @@ document.getElementById('layer-select').addEventListener('change', (e) => {
             }
         }
 
+        // QW-3: these three were previously undeclared in this handler, so when
+        // metadata.hasElevation === true the block threw "elevationControl is not defined"
+        // before recreateWMSLayer() could run. Declare + null-guard them the same way the
+        // sibling blocks do (getElementById + `if (el)`). The global elevation control uses ids
+        // `elevation-select` (slider) and `elevation-value` (label); there is no
+        // `elevation-control` container in the DOM, so elevationControl resolves to null and its
+        // guarded uses are no-ops — matching the pre-existing latent intent, not throwing.
+        const elevationControl = document.getElementById('elevation-control');
+        const elevationSlider = document.getElementById('elevation-select');
+        const elevationLabel = document.getElementById('elevation-value');
+
         // ENHANCED FIX: Explicitly hide elevation control for static layers
         if (metadata && metadata.hasElevation === true) {
-            elevationControl.style.display = 'flex';
+            if (elevationControl) elevationControl.style.display = 'flex';
             console.log('✅ Elevation control shown (hasElevation=true)');
 
             // Adjust range based on layer type
             if (metadata.type === 'video') {
-                elevationSlider.max = 15;  // Forecast days 0-15
+                if (elevationSlider) elevationSlider.max = 15;  // Forecast days 0-15
                 const label = 'Day';
-                elevationLabel.textContent = `${label}: ${currentParams.elevation}`;
+                if (elevationLabel) elevationLabel.textContent = `${label}: ${currentParams.elevation}`;
             } else {
-                elevationSlider.max = 8;   // Return periods 0-8
+                if (elevationSlider) elevationSlider.max = 8;   // Return periods 0-8
                 const label = metadata.type === 'points' ? 'RP' : 'RP';
-                elevationLabel.textContent = `${label}: ${currentParams.elevation}`;
+                if (elevationLabel) elevationLabel.textContent = `${label}: ${currentParams.elevation}`;
             }
 
             // CRITICAL FIX: Always reset elevation to 0 when switching layers
             // This ensures first frame is shown
             currentParams.elevation = 0;
-            elevationSlider.value = 0;
-            elevationLabel.textContent = metadata.type === 'video' ? 'Day: 0' : 'RP: 0';
+            if (elevationSlider) elevationSlider.value = 0;
+            if (elevationLabel) elevationLabel.textContent = metadata.type === 'video' ? 'Day: 0' : 'RP: 0';
             console.log('🔄 [LAYER SWITCH] Reset elevation to 0 (first frame)');
         } else {
             // ENHANCED FIX: Force hide elevation control for static layers with explicit logging
-            elevationControl.style.display = 'none';
+            if (elevationControl) elevationControl.style.display = 'none';
             console.log('🔒 Elevation control HIDDEN for static layer (hasElevation=false)');
 
             // Reset elevation to 0 when switching to layer without elevation
             currentParams.elevation = 0;
-            elevationSlider.value = 0;
+            if (elevationSlider) elevationSlider.value = 0;
         }
 
         // ✅ CRITICAL: Layer change requires recreation (now with graceful cleanup)
@@ -2441,16 +2527,25 @@ document.getElementById('time-select').addEventListener('change', (e) => {
     // Clear video caches so new TIME actually loads fresh frames.
     // clearAnimationCacheForLayer also aborts in-flight tile requests to free connection slots.
     if (currentMeta && currentMeta.type === 'video') {
+        // A date/scrub change is a real user action — end the startup window so the
+        // single-frame load below is not suppressed by the startup frame-0-only deferral.
+        window._initialLayerLoadInProgress = false;
         clearAnimationCacheForLayer(currentParams.layer);
-        // Debounce auto-preload: if user is clicking rapidly through dates/hours,
-        // wait 300ms after the last click before starting preload.
-        // Eliminates hundreds of stale tile requests flooding the connection pool.
-        const layerToPreload = currentParams.layer;
+        // DO NOT auto-fire the full 16-frame preload on a date change. The full preload
+        // (~204 requests per video layer) must run ONLY on an explicit Play press
+        // (startAnimation → preloadAllFrames(true)). A date change — even while the
+        // animation was playing (stopped above) — should at most refresh the base grid
+        // (handled by debouncedTimeUpdate() below, ~12 tiles) and load the SINGLE frame
+        // for the newly selected day on demand, exactly like the zoom fix does. Debounce
+        // so rapid date/hour clicking doesn't flood the connection pool with stale frames.
+        // Layer-agnostic: applies to both twl75 and epis_wl75.
+        const layerToLoad = currentParams.layer;
+        const dayToLoad = currentParams.elevation;
         clearTimeout(autoPreloadDebounceTimer);
         autoPreloadDebounceTimer = setTimeout(() => {
-            if (window.autoPreloadVideoLayer && !window.isAnimating && !window.isAnimationLoading
-                    && window.activeLayers && window.activeLayers.has(layerToPreload)) {
-                window.autoPreloadVideoLayer(layerToPreload);
+            if (window.preloadSingleFrame && !window.isAnimating && !window.isAnimationLoading
+                    && window.activeLayers && window.activeLayers.has(layerToLoad)) {
+                window.preloadSingleFrame(layerToLoad, dayToLoad);
             }
         }, 300);
     }
@@ -2726,34 +2821,19 @@ map.on('zoomend', function () {
         });
     }
 
-    // Re-preload video frames for the new zoom so slider stays smooth after zooming.
-    // Pre-seeded zoom (≤4): all 16 frames. Non-seeded zoom (5+): frame 0 only (see preloadAllFrames).
-    if (!window.isAnimating && !window.isAnimationLoading && window.autoPreloadVideoLayer) {
-        const roundedNew = Math.round(newZoom);
-        const strategy = roundedNew <= GWC_MAX_SEEDED_ZOOM ? 'all 16 frames (seeded)' : 'frame 0 only (on-the-fly)';
-        setTimeout(() => {
-            if (window.activeLayers) {
-                window.activeLayers.forEach((layerData, layerId) => {
-                    if (layerData.metadata && layerData.metadata.type === 'video'
-                            && GWC_LAYERS.includes(layerId)
-                            && !window.isAnimating && !window.isAnimationLoading) {
-                        console.log(`🔄 [ZOOM ${roundedNew}] Re-preloading ${layerId} — ${strategy}`);
-                        // autoPreloadVideoLayer front-loads day 0 (opacity 0) and may leave a
-                        // day-0 instance on top. Chain the restore to its completion (not a
-                        // fixed timeout) so the user's selected day always ends up visible,
-                        // regardless of how long the preload took.
-                        Promise.resolve(window.autoPreloadVideoLayer(layerId)).finally(() => {
-                            if (!window.isAnimating
-                                    && window.restoreVideoFrameForZoom
-                                    && window.activeLayers && window.activeLayers.has(layerId)) {
-                                window.restoreVideoFrameForZoom(layerId, window.activeLayers.get(layerId));
-                            }
-                        });
-                    }
-                });
-            }
-        }, 400);
-    }
+    // ZOOM MUST NOT TRIGGER A FRAME PRELOAD.
+    // Previously this handler cleared `_initialLayerLoadInProgress` and then called
+    // autoPreloadVideoLayer() for every video layer — i.e. a zoom kicked off the full
+    // ~16-frame preload (~190 requests), the exact cost we deliberately moved off the
+    // startup path. A zoom should be cheap: the base current-time grid (~12 tiles) is
+    // refetched by normal Leaflet behaviour, and the single current-time frame is
+    // restored above via the 100ms preloadSingleFrame pre-warm + restoreVideoFrameForZoom.
+    // The full preload now runs ONLY on Play (startAnimation → preloadAllFrames(true)) and
+    // on-demand scrub (date/day-slider change). So we intentionally do NOT clear the
+    // deferral guard and do NOT call autoPreloadVideoLayer / preloadAllFrames here.
+    // Any still-running animation is stopped in zoomstart, so there is no mid-playback
+    // re-warm to preserve: the next Play re-preloads for the current zoom (Play always
+    // force-preloads), which is correct and cheap.
 });
 
 // ═══════════════════════════════════════════════════════════════
@@ -2786,6 +2866,7 @@ function removeClickPoint(id) {
     try { if (pt.popup && map.hasLayer(pt.popup)) map.closePopup(pt.popup); } catch (_) { }
     if (el && el.parentNode) el.parentNode.removeChild(el);
     clickPoints.delete(id);
+    notifyClickPointsChanged();
 }
 
 // Remove every active point (used e.g. before a full reset if ever needed).
@@ -2794,6 +2875,43 @@ function removeAllClickPoints() {
     clickPointColorIdx = 0;
 }
 window.removeAllClickPoints = removeAllClickPoints;
+
+// ── Share support: expose open points + a restore helper ───────
+// A click point is fully reconstructible from its latlng alone — the values
+// and time-series charts are re-queried live against the active layers + date.
+// So sharing only needs the list of clicked coordinates.
+window.getClickPoints = function () {
+    const pts = Array.from(clickPoints.values()).map(pt => ({
+        lat: Number(pt.latlng.lat).toFixed(4),
+        lng: Number(pt.latlng.lng).toFixed(4)
+    }));
+    console.log('🔗 getClickPoints →', pts.length, 'point(s)', pts);
+    return pts;
+};
+
+// Re-open a popup at a given latlng exactly as a user click would (read-only:
+// it just re-runs GetFeatureInfo). Used by share.js when restoring a link.
+window.restoreClickPoint = function (lat, lng) {
+    try {
+        if (typeof getFeatureInfo === 'function' && window.L) {
+            console.log('🔗 restoreClickPoint → getFeatureInfo at', lat, lng);
+            getFeatureInfo(L.latLng(lat, lng));
+        } else {
+            console.warn('🔗 restoreClickPoint: getFeatureInfo/L not available');
+        }
+    } catch (e) {
+        console.warn('restoreClickPoint failed:', e);
+    }
+};
+
+// Notify listeners (share.js) whenever the set of open points changes so the
+// shareable URL hash can be kept in sync.
+function notifyClickPointsChanged() {
+    if (typeof window.onClickPointsChange === 'function') {
+        try { window.onClickPointsChange(); } catch (_) { }
+    }
+}
+window.notifyClickPointsChanged = notifyClickPointsChanged;
 
 // Make a Leaflet popup manually draggable via its ".popup-drag-handle" header.
 //
@@ -2950,7 +3068,40 @@ async function getFeatureInfo(latlng) {
     // Check if using multi-layer system or single layer
     const useMultiLayer = typeof activeLayers !== 'undefined' && activeLayers.size > 0;
 
-    if (!useMultiLayer && !wmsLayer) {
+    // Authoritative visibility check: count WMS overlay tile layers actually on the map
+    // right now, ignoring the basemap and country-info helper layers. This is independent
+    // of activeLayers / wmsLayer bookkeeping, so a stale reference can't resurrect a popup.
+    let visibleOverlayCount = 0;
+    if (window.map && typeof window.map.eachLayer === 'function') {
+        window.map.eachLayer(layer => {
+            // WMS overlays are L.tileLayer.wms instances → they carry a wmsParams object.
+            if (layer && layer.wmsParams && layer.wmsParams.layers) {
+                visibleOverlayCount++;
+            }
+        });
+    }
+
+    // Only probe layers the user can actually see. A layer hidden via the eye toggle
+    // is removed from the map but still lives in activeLayers — it must NOT trigger a popup.
+    const hasVisibleLayer = useMultiLayer
+        && Array.from(activeLayers.values()).some(ld => ld && !ld.hidden);
+
+    // No overlay layer is on (all removed, or all hidden → only the basemap is visible):
+    // don't open a GetFeatureInfo popup with empty / zero values.
+    // We require BOTH an active, non-hidden layer AND a real WMS overlay on the map.
+    // NOTE: we deliberately do NOT fall back to the legacy `wmsLayer` alias when it is no
+    // longer on the map, because it can hold a stale reference after the last multi-layer
+    // was removed, which produced spurious "No data"/zero popups over the bare basemap.
+    if (visibleOverlayCount === 0) {
+        console.log('ℹ️ No visible overlay layer on map — skipping GetFeatureInfo popup');
+        return;
+    }
+    if (useMultiLayer) {
+        if (!hasVisibleLayer) {
+            console.log('ℹ️ No visible overlay layer — skipping GetFeatureInfo popup');
+            return;
+        }
+    } else if (!wmsLayer || !window.map.hasLayer(wmsLayer)) {
         console.warn('⚠️ No WMS layer active');
         return;
     }
@@ -2981,6 +3132,7 @@ async function getFeatureInfo(latlng) {
 
     // Track this point. Marker is added later (only for video-chart clicks).
     clickPoints.set(pointId, { latlng, color, marker: null, popup: loadingPopup, controller });
+    notifyClickPointsChanged();
 
     // When this popup closes (× button or Esc), remove ONLY this point.
     loadingPopup.on('remove', () => removeClickPoint(pointId));
@@ -3020,6 +3172,7 @@ async function getFeatureInfo(latlng) {
             for (const layerId of orderedLayerIds) {
                 const layerData = activeLayers.get(layerId);
                 if (!layerData) continue;
+                if (layerData.hidden) continue; // skip eye-toggled-off layers — they're not visible
                 promises.push(queryLayer(layerId, layerData, latlng, point, size, signal));
             }
 
@@ -3066,10 +3219,14 @@ async function getFeatureInfo(latlng) {
             }
         } else {
             const meta = layerMetadata[currentParams.layer];
-            if (meta && meta.type === 'video') {
+            const legacyWmsLayer = (window.activeLayers && window.activeLayers.get(currentParams.layer)?.wmsLayer) || wmsLayer;
+            // Only chart a legacy single video layer if it's genuinely still on the map.
+            // Guards against charting a turned-off layer via the stale currentParams.layer.
+            const legacyVisible = legacyWmsLayer && window.map && window.map.hasLayer(legacyWmsLayer);
+            if (meta && meta.type === 'video' && legacyVisible) {
                 videoLayersToChart.push({
                     layerId: currentParams.layer,
-                    layerData: { time: currentParams.time, elevation: currentParams.elevation, metadata: meta, wmsLayer: (window.activeLayers && window.activeLayers.get(currentParams.layer)?.wmsLayer) },
+                    layerData: { time: currentParams.time, elevation: currentParams.elevation, metadata: meta, wmsLayer: legacyWmsLayer },
                     layerName: (typeof layerDisplayNames !== 'undefined' ? layerDisplayNames[currentParams.layer] : null) || currentParams.layer
                 });
             }
