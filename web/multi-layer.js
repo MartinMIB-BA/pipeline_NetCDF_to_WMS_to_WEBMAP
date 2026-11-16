@@ -2087,20 +2087,21 @@ document.addEventListener('DOMContentLoaded', function () {
                     window._initialLayerLoadInProgress = true;
                 }
 
-                // Default layer: TWL75 forecast only.
-                //
-                // The Country Hazard choropleth (country_twl_summary) is NO LONGER
-                // auto-loaded at startup. It is fed by the weekly subseasonal CSV
-                // ingest, so its newest timestep lags the daily TWL/EPIS data by up
-                // to a week. When it was the default layer the app opened on the
-                // choropleth's latest date (e.g. 2026-11-09) instead of the latest
-                // daily forecast, which looked like the app was stuck in the past.
-                // Starting on twl75 opens the app on the newest available forecast.
-                // The user can still enable Country Hazard manually via its checkbox.
-                //
-                // GloFAS reporting points stay opt-in too (external third-party WMS
-                // with uncontrollable latency; competes for the connection budget
-                // during first paint).
+                // Default layers — activate bottom-to-top so twl75 ends up the ACTIVE layer
+                // (last .click() wins: addLayer → setCurrentLayer → currentParams.layer).
+                // 1. Country Hazard choropleth (base context)
+                const choroplethCheckbox = document.getElementById('checkbox-country_twl_summary');
+                if (choroplethCheckbox && !choroplethCheckbox.checked) {
+                    console.log('🚀 Auto-initializing default layer: country_twl_summary');
+                    choroplethCheckbox.click();
+                }
+                // 2. GloFAS reporting points
+                const reportingPointsCheckbox = document.getElementById('checkbox-reportingPoints');
+                if (reportingPointsCheckbox && !reportingPointsCheckbox.checked) {
+                    console.log('🚀 Auto-initializing default layer: reportingPoints');
+                    reportingPointsCheckbox.click();
+                }
+                // 3. TWL75 forecast — LAST, so it is the active layer driving date/time + legend
                 if (defaultCheckbox && !defaultCheckbox.checked) {
                     console.log(`🚀 Auto-initializing default layer: ${defaultLayerId}`);
                     defaultCheckbox.click();

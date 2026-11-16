@@ -2530,7 +2530,9 @@ document.getElementById('time-select').addEventListener('change', (e) => {
     if (currentMeta && currentMeta.type === 'video') {
         // A date/scrub change is a real user action — end the startup window so the
         // single-frame load below is not suppressed by the startup frame-0-only deferral.
-        window._initialLayerLoadInProgress = false;
+        // Exception: a programmatic metadata-init dispatch (_programmaticTimeInit) must
+        // NOT clear the gate, or the startup frame burst can fire prematurely.
+        if (!window._programmaticTimeInit) window._initialLayerLoadInProgress = false;
         clearAnimationCacheForLayer(currentParams.layer);
         // DO NOT auto-fire the full 16-frame preload on a date change. The full preload
         // (~204 requests per video layer) must run ONLY on an explicit Play press
@@ -3855,8 +3857,14 @@ function applyDateRangeFromMetadata() {
         timeInput.max = maxDate.toISOString().slice(0, 16);
         timeInput.value = latestTime.slice(0, 16); // "YYYY-MM-DDTHH:MM"
 
-        // Trigger change event so any listeners update
+        // Trigger change event so any listeners update.
+        // Mark this as a programmatic (metadata-init) dispatch so the #time-select
+        // change handler does NOT clear the startup preload gate (that must only
+        // happen on real user actions — Play / genuine scrub). The dispatch is
+        // synchronous, so the flag is safely reset immediately after.
+        window._programmaticTimeInit = true;
         timeInput.dispatchEvent(new Event('change'));
+        window._programmaticTimeInit = false;
     }
 
     updateGlobalDateControlsForLayer(getCurrentLayerIdForGlobalTime(), 'metadata init');
