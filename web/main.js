@@ -1,17 +1,27 @@
-// Phase 1 Vite module entry for the Coastal WMS Leaflet viewer.
+// Phase 1/2 Vite module entry for the Coastal WMS Leaflet viewer.
 //
-// PACKAGING ONLY. This file does NOT refactor the app. It reproduces today's
-// load order exactly so every window.* symbol is defined at the same point it is
-// in the legacy buildless index.html. The seven app files are imported as
-// side-effecting modules in their existing hand-tuned order; none of them are
-// converted to import/export and none of their window.* coupling is touched
-// (that is a later phase, explicitly out of scope here).
+// PACKAGING ONLY. This file does NOT refactor the app. It owns the self-hosted
+// dependencies only: Leaflet (JS + CSS), the Inter / JetBrains Mono fonts,
+// FontAwesome, and the local design-system CSS. It exposes the global `L` the
+// app relies on.
+//
+// The 7 app files are NOT imported here. Phase 2 note: under ES-module bundling
+// each imported file gets its OWN module scope, so top-level const/let/function
+// in one file (e.g. GEOSERVER_URL in app.js) are no longer visible to the files
+// that read them (wms-metadata.js, multi-layer.js, country-info.js) the way they
+// were under the legacy classic <script> tags that shared one global script
+// scope. To preserve that exact shared-scope behaviour with ZERO edits to the 7
+// files, they are concatenated — in the legacy order — into a single CLASSIC
+// (non-module) hashed bundle by the `legacyAppBundle` plugin in vite.config.js,
+// and injected into index.html AFTER this module so `window.L` is set first.
 //
 // Order rationale (mirrors web/index.html):
 //   1. Leaflet JS + CSS first  -> global `L` must exist before app.js evaluates.
 //   2. Self-hosted fonts + FontAwesome CSS (replaces the CDN <link> tags on the
 //      legacy path; same visual weights as the Google Fonts / cdnjs URLs).
-//   3. The 7 app files in the exact legacy order:
+//   3. The local design-system CSS (tokens + styles).
+// The app logic (the 7 files) then runs from the classic bundle, in the exact
+// legacy order:
 //      toast -> share -> wms-metadata -> app -> multi-layer -> ui-interactions -> country-info
 
 // --- 1. Leaflet (self-hosted, replaces unpkg CDN JS + CSS) ---
@@ -41,11 +51,9 @@ import '@fortawesome/fontawesome-free/css/all.min.css';
 import './tokens.css';
 import './styles.css';
 
-// --- 3. The 7 app files, in the exact legacy load order ---
-import './toast.js';
-import './share.js';
-import './wms-metadata.js';
-import './app.js';
-import './multi-layer.js';
-import './ui-interactions.js';
-import './country-info.js';
+// --- 3. The 7 app files ---
+// NOT imported here. They are concatenated into a single classic (non-module)
+// hashed bundle by the `legacyAppBundle` plugin (see vite.config.js) so their
+// top-level declarations share ONE script scope exactly like the legacy
+// classic <script> tags. The plugin injects that bundle into index.html right
+// after this module, so `window.L` above is defined before the app runs.
