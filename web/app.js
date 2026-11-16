@@ -1,7 +1,10 @@
 // GeoServer configuration - AUTO DETECT ENVIRONMENT
 window.isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-// const GEOSERVER_URL = window.isLocalhost ? 'http://localhost:8080' : '/geoserver';
-const GEOSERVER_URL = window.isLocalhost ? 'http://89.47.190.54/geoserver' : '/geoserver';
+// GeoServer base URL. Production serves GeoServer behind the same origin at /geoserver.
+// Dev can override via `window.GEOSERVER_OVERRIDE` (e.g. set it to 'http://localhost:8080'
+// before this script loads); otherwise both prod and localhost fall back to the relative
+// /geoserver path. No hardcoded production host is used as a default.
+const GEOSERVER_URL = window.GEOSERVER_OVERRIDE || '/geoserver';
 
 const WORKSPACE = 'E_and_T';
 
