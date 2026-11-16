@@ -2106,6 +2106,28 @@ document.addEventListener('DOMContentLoaded', function () {
                     console.log(`🚀 Auto-initializing default layer: ${defaultLayerId}`);
                     defaultCheckbox.click();
                 }
+
+                // FINAL: the active layer (twl75) owns the headline date. The choropleth click above
+                // wrote its lagging weekly week into #time-select (addLayer tail, multi-layer.js:1014/1018);
+                // re-assert twl75's latest daily date so the app opens on the newest forecast, not the past.
+                // Skip when a shared permalink pinned the date.
+                if (!(window._sharedState && window._sharedState.t)) {
+                    const activeLatest = window.wmsMetadata.getLatestTimeForLayer(defaultLayerId); // 'twl75'
+                    const timeInput = document.getElementById('time-select');
+                    if (activeLatest && timeInput) {
+                        const v = activeLatest.slice(0, 16);           // "YYYY-MM-DDTHH:mm"
+                        if (timeInput.value !== v) {
+                            timeInput.value = v;
+                            // Keep the dispatch programmatic so it does NOT clear
+                            // window._initialLayerLoadInProgress (gate read at app.js:2535) and
+                            // reopen the startup frame burst. Dispatch is synchronous — same
+                            // pattern as app.js:3865-3867.
+                            window._programmaticTimeInit = true;
+                            timeInput.dispatchEvent(new Event('change')); // drives currentParams.time + syncs
+                            window._programmaticTimeInit = false;
+                        }
+                    }
+                }
             }
         }).catch(err => {
             // Fallback: init anyway even if metadata fails
