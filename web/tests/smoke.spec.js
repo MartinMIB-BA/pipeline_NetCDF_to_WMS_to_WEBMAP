@@ -111,11 +111,6 @@ test('switching on Episode WL after a Play does not preload its animation frames
   await page.evaluate(() => window.stopAnimation());
   await page.waitForFunction(() => window.isAnimating === false);
 
-  // The app allows at most 3 active layers (MAX_LAYERS) and starts with exactly 3, so a user
-  // must switch one off before adding Episode WL. Do the same here.
-  await page.evaluate(() => document.getElementById('checkbox-country_twl_summary').click());
-  await page.waitForFunction(() => !window.activeLayers.has('country_twl_summary'));
-
   // Same path a user click takes: checkbox click -> addLayer -> autoPreloadVideoLayer.
   await page.evaluate(() => document.getElementById('checkbox-epis_wl75').click());
   await page.waitForFunction(() => window.activeLayers.has('epis_wl75'));
@@ -138,4 +133,32 @@ test('layers can be toggled off and on', async ({ page }) => {
   await toggle();
   await page.waitForFunction(() => window.activeLayers.has('country_twl_summary'));
   await expect(page.locator('#checkbox-country_twl_summary')).toBeChecked();
+});
+
+test('allows a 4th layer on top of the 3 defaults and refuses a 5th', async ({ page }) => {
+  await waitForBoot(page);
+
+  const dialogs = [];
+  page.on('dialog', async (dialog) => {
+    dialogs.push(dialog.message());
+    await dialog.dismiss();
+  });
+
+  // 4th layer: accepted without switching a default off.
+  await page.evaluate(() => document.getElementById('checkbox-epis_wl75').click());
+  await page.waitForFunction(() => window.activeLayers.has('epis_wl75'));
+  expect(await page.evaluate(() => window.activeLayers.size), 'active layers').toBe(4);
+  expect(dialogs, 'no limit dialog for the 4th layer').toEqual([]);
+
+  // 5th layer: refused with the limit dialog, checkbox stays unchecked.
+  const fifth = await page.evaluate(() => {
+    const free = [...document.querySelectorAll('[id^="checkbox-"]')].find(
+      (cb) => !cb.checked && !window.activeLayers.has(cb.value),
+    );
+    free.click();
+    return free.id;
+  });
+  await expect(page.locator(`#${fifth}`), '5th layer checkbox').not.toBeChecked();
+  expect(await page.evaluate(() => window.activeLayers.size), 'active layers after 5th').toBe(4);
+  expect(dialogs.join(' '), 'limit dialog').toContain('Maximum 4 layers allowed');
 });

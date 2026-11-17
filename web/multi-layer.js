@@ -2,10 +2,11 @@
 // MULTI-LAYER MANAGEMENT SYSTEM
 // ═══════════════════════════════════════════════════════════════
 
-// Active layers (max 3)
+// Active layers (max 4). The app starts with 3 default layers, so 4 leaves room for one more
+// (e.g. Episode WL) without switching a default off first.
 const activeLayers = new Map(); // layerId -> { wmsLayer, time, elevation, opacity, metadata }
 window.activeLayers = activeLayers; // Export for use in app.js (e.g., stopAnimation restore)
-const MAX_LAYERS = 3;
+const MAX_LAYERS = 4;
 let activeLayerDnDBound = false;
 
 // Layer display names for better UX - UPDATED TO MATCH GEOSERVER
