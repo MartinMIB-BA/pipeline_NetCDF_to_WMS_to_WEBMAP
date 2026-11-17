@@ -1573,11 +1573,6 @@ async function preloadAllFrames(forceAllFrames = false) {
             currentZoom = 6;
         }
 
-        // Pre-seeded zoom (2-4): all 16 frames are in GWC → ~400ms with warm Nginx cache.
-        // Non-seeded zoom (5+): GeoServer renders tiles from TIFFs → only preload frame 0
-        // automatically. Remaining frames load on-demand when user scrubs or clicks Play.
-        const isSeededZoom = !isGwcLayer || currentZoom <= GWC_MAX_SEEDED_ZOOM;
-
         // NOTE: Do NOT seed layerData.wmsLayer (base layer) into animationCache here.
         // The base layer lives in baseWmsPane (z=350); seeding it causes animateNextFrame
         // to retrieve the base layer for that day and never show real animation frames.
@@ -1633,45 +1628,17 @@ async function preloadAllFrames(forceAllFrames = false) {
         // by the first user action (Play / date-change scrub), NOT by zoom and NOT by a timer, so
         // no background self-re-queue — and no zoom — ever fetches frames 1..N. This applies to
         // every video layer because preloadAllFrames is layer-agnostic.
-        if (window._initialLayerLoadInProgress && !forceAllFrames && totalFrames > 1) {
-            console.log(`⏳ [INITIAL LOAD] Frame 0 ready for ${currentParams.layer} — deferring frames 1-${totalFrames-1} until first Play/scrub`);
+        // PLAY-ONLY PRELOAD: frames 1..N are fetched ONLY when the user presses Play
+        // (startAnimation → preloadAllFrames(true)). Every non-forced call — the auto-preload
+        // fired when a video layer is switched on (multi-layer.js addLayer → autoPreloadVideoLayer),
+        // at startup or at any later time — stops here after frame 0. Previously this deferral only
+        // held during the initial page load (_initialLayerLoadInProgress), so after the first Play
+        // switching to another video layer (e.g. epis_wl75) fired the full 16-frame burst.
+        // Day-slider scrubbing loads single frames on demand via preloadSingleFrame.
+        if (!forceAllFrames && totalFrames > 1) {
+            console.log(`⏳ [AUTO-PRELOAD] Frame 0 ready for ${currentParams.layer} — frames 1-${totalFrames-1} load on Play`);
             playBtn.innerHTML = originalText;
             console.timeEnd('⏱️ Total preload time');
-            return true;
-        }
-
-        // Non-seeded zoom (auto-preload only): load frame 0 immediately (already done above),
-        // then warm up remaining frames 2 at a time in the background with 400ms gaps.
-        // This avoids flooding GeoServer (first render from TIFF) while still warming Nginx cache
-        // so that Play and scrubbing are fast on subsequent visits to the same date.
-        if (!isSeededZoom && !forceAllFrames) {
-            console.log(`🏔️ [ZOOM ${currentZoom}] Non-seeded — frame 0 done, warming frames 1-${totalFrames-1} in background (2/400ms)`);
-            playBtn.innerHTML = originalText;
-            console.timeEnd('⏱️ Total preload time');
-
-            // Background warm-up: 2 frames per 400ms — doesn't block UI, can be cancelled by date change.
-            // Uses a DEDICATED flag (isBackgroundWarming), NOT isAnimationLoading: this loop runs
-            // AFTER preloadAllFrames returns and autoPreloadVideoLayer clears isAnimationLoading, so
-            // if it kept isAnimationLoading true it would make zoomstart's stopAnimation() check and
-            // restoreVideoFrameForZoom's guard treat idle warm-up as "animating" → the day resets to 0.
-            const layerSnapshot = currentParams.layer;
-            const timeSnapshot = currentParams.time;
-            window.isBackgroundWarming = true;
-            (async () => {
-                try {
-                    for (let i = 1; i < totalFrames; i += 2) {
-                        // Stop if date/layer changed or animation started
-                        if (currentParams.layer !== layerSnapshot || currentParams.time !== timeSnapshot
-                                || window.isAnimating || window.isAnimationLoading) break;
-                        const batch = [preloadFrame(i, null, currentZoom)];
-                        if (i + 1 < totalFrames) batch.push(preloadFrame(i + 1, null, currentZoom));
-                        await Promise.all(batch);
-                        await new Promise(r => setTimeout(r, 400));
-                    }
-                } finally {
-                    window.isBackgroundWarming = false;
-                }
-            })();
             return true;
         }
 

@@ -1032,7 +1032,8 @@ function addLayer(layerId) {
     updateBottomPanelLayers();
     syncLayerBubbleState();
 
-    // Auto-preload all frames for video layers so slider works instantly without pressing play
+    // Warm frame 0 only for video layers. Frames 1..N load on Play (preloadAllFrames
+    // defers every non-forced call after frame 0 — see app.js "PLAY-ONLY PRELOAD").
     if (isVideo && window.autoPreloadVideoLayer) {
         setTimeout(() => {
             if (activeLayers.has(layerId) && !window.isAnimating && !window.isAnimationLoading) {
