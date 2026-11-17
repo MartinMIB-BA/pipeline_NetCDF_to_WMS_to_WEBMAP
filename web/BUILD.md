@@ -58,13 +58,16 @@ npm run build # Vite build -> web/dist/
 
 ```sh
 cd web
-npm run preview   # serves web/dist/ at http://localhost:4173/
+npm run preview   # serves web/dist/ at http://localhost:4174/
 ```
 
-Open `http://localhost:4173/` (root, no filename) — the app loads from
+Open `http://localhost:4174/` (root, no filename) — the app loads from
 `dist/index.html` and its hashed `/assets/*` bundle. On localhost the app talks to the
-**production GeoServer** (`http://89.47.190.54/geoserver`) by design (`window.isLocalhost`
-branch), so map tiles load from prod during local preview; that is expected.
+live GeoServer through the **staging nginx on port 8082**
+(`http://89.47.190.54:8082/geoserver`, `window.isLocalhost` branch). Staging and production
+share the same GeoServer backend, so map tiles and data are identical. Port 80 is not used
+from localhost: it 301-redirects to HTTPS without CORS headers, which makes the browser block
+every tile.
 
 The built HTML/JS/CSS contains **no** `unpkg.com`, `cdnjs`, `fonts.googleapis.com`
 or `fonts.gstatic.com` URLs — all former CDN deps are same-origin. (The
@@ -100,3 +103,18 @@ Phase 2 repoints the server at the build output. It must:
 
 Until phase 2 happens, the legacy `index.html` + its CDN tags remain exactly what
 nginx serves, so staging and production are unaffected by this build.
+
+## Smoke test (run before every deploy)
+
+```bash
+cd web
+npm run test:smoke           # builds, starts vite preview on :4174, runs Playwright
+npm run test:smoke:staging   # same tests against http://89.47.190.54:8082/
+```
+
+One-time setup on a new machine: `npm ci && npx playwright install chromium`.
+
+The tests open the app in headless Chromium and check that it boots without JS/CORS errors,
+opens with the 3 default layers and twl75 active on twl75's latest date, renders twl75 tiles,
+does not preload animation frames at startup or when Episode WL is switched on after a Play,
+and that layers toggle off/on. A passing HTTP 200 check alone does not prove the app works.

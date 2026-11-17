@@ -1,8 +1,11 @@
 // GeoServer configuration - AUTO DETECT ENVIRONMENT
 window.isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
 // GeoServer base URL. Production serves GeoServer behind the same origin at /geoserver.
-// On localhost there is no local GeoServer, so dev hits the live production server directly.
-const GEOSERVER_URL = window.isLocalhost ? 'http://89.47.190.54/geoserver' : '/geoserver';
+// On localhost there is no local GeoServer, so dev hits the live server directly via the
+// staging nginx on port 8082 (same GeoServer backend as production). Port 80 is NOT usable
+// from localhost: it 301-redirects to HTTPS without CORS headers, so the browser blocks every
+// tile/Capabilities request. Port 8082 answers directly with Access-Control-Allow-Origin: *.
+const GEOSERVER_URL = window.isLocalhost ? 'http://89.47.190.54:8082/geoserver' : '/geoserver';
 
 const WORKSPACE = 'E_and_T';
 

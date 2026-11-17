@@ -6,15 +6,18 @@
   "type": "module",
   "scripts": {
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test:smoke": "playwright test",
+    "test:smoke:staging": "SMOKE_URL=http://89.47.190.54:8082/ playwright test"
   },
   "dependencies": {
-    "@fortawesome/fontawesome-free": "6.4.0",
     "@fontsource/inter": "5.3.0",
     "@fontsource/jetbrains-mono": "5.3.0",
+    "@fortawesome/fontawesome-free": "6.4.0",
     "leaflet": "1.9.4"
   },
   "devDependencies": {
+    "@playwright/test": "1.65.1",
     "vite": "8.3.8"
   }
 }

@@ -72,6 +72,9 @@ ENV/
 ### WEB / FRONTEND ###
 # Ignore node modules if you add JS libraries like Leaflet
 node_modules/
+# Playwright smoke-test output (traces, failure artifacts)
+web/test-results/
+web/playwright-report/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
