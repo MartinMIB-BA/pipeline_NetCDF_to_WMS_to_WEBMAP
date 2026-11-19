@@ -538,7 +538,7 @@
             width: 100%;
             max-width: 100%;
             box-sizing: border-box;
-            max-height: 220px;
+            max-height: 400px;
             overflow: auto;
             scrollbar-width: thin;
             scrollbar-color: rgba(255,255,255,0.15) transparent;
@@ -548,9 +548,6 @@
             /* Natural size, never upscaled; only shrunk to fit the panel */
             width: auto;
             max-width: 100%;
-            max-height: 150px;
-            object-fit: contain;
-            object-position: left top;
             height: auto;
             border-radius: 4px;
             border: 1px solid rgba(255, 255, 255, 0.08);

@@ -612,8 +612,7 @@ function buildLegendUrl(layerId) {
     const baseUrl = isGlofas ? meta.wmsUrl : `${GEOSERVER_URL}/wms`;
     const legendParams = isGlofas
         ? { service: 'WMS', request: 'GetLegendGraphic', format: 'image/png', version: '1.1.1', SLD_VERSION: '1.1.0', layer: layerName }
-        : { service: 'WMS', request: 'GetLegendGraphic', format: 'image/png', transparent: 'true', version: '1.3.0', layer: layerName,
-            width: '16', height: '16', legend_options: 'fontSize:10;fontAntiAliasing:true;dpi:72' };
+        : { service: 'WMS', request: 'GetLegendGraphic', format: 'image/png', transparent: 'true', version: '1.3.0', layer: layerName };
     return `${baseUrl}?${new URLSearchParams(legendParams).toString()}`;
 }
 
