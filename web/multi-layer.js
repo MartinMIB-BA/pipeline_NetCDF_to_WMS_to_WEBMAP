@@ -612,7 +612,8 @@ function buildLegendUrl(layerId) {
     const baseUrl = isGlofas ? meta.wmsUrl : `${GEOSERVER_URL}/wms`;
     const legendParams = isGlofas
         ? { service: 'WMS', request: 'GetLegendGraphic', format: 'image/png', version: '1.1.1', SLD_VERSION: '1.1.0', layer: layerName }
-        : { service: 'WMS', request: 'GetLegendGraphic', format: 'image/png', transparent: 'true', version: '1.3.0', layer: layerName };
+        : { service: 'WMS', request: 'GetLegendGraphic', format: 'image/png', transparent: 'true', version: '1.3.0', layer: layerName,
+            width: '16', height: '16', legend_options: 'fontSize:10;fontAntiAliasing:true;dpi:72' };
     return `${baseUrl}?${new URLSearchParams(legendParams).toString()}`;
 }
 
@@ -693,15 +694,19 @@ document.addEventListener('click', function (e) {
         img.dataset.scale = '100';
         img.style.width = '';
         img.style.maxWidth = '';
+        img.style.maxHeight = '';
         return;
     }
 
     if (btn.dataset.action === 'grow')   next = Math.min(current + STEP, 200);
     if (btn.dataset.action === 'shrink') next = Math.max(current - STEP, 20);
 
+    // Scale relative to the image's natural size (not the container width)
     img.dataset.scale = next;
-    img.style.width = `${next}%`;
+    const naturalW = img.naturalWidth || img.clientWidth;
+    img.style.width = `${Math.round(naturalW * next / 100)}px`;
     img.style.maxWidth = 'none';
+    img.style.maxHeight = 'none';
 });
 
 // Global set of layerIds whose last tile load cycle had 0 successes.
