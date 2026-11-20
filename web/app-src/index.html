@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Copernicus EMS - Floods | Testing Environment</title>
+
+    <!-- Favicon: Metron logo (stylised "M" over waves) -->
+    <link rel="icon" type="image/svg+xml" href="../favicon.svg">
+
+    <!-- Basemap tile origins. Esri World Street Map (English labels) is the default basemap and
+         serves from a single origin; OSM and GISCO stay selectable in the switcher, so warm their
+         origins with a lighter dns-prefetch. These are runtime basemap tile hosts, NOT bundled
+         deps, so they stay even on the self-hosted Vite path. -->
+    <link rel="preconnect" href="https://server.arcgisonline.com" crossorigin>
+    <link rel="dns-prefetch" href="https://server.arcgisonline.com">
+    <link rel="dns-prefetch" href="https://a.tile.openstreetmap.org">
+    <link rel="dns-prefetch" href="https://gisco-services.ec.europa.eu">
+
+    <!-- Vite entry. This file lives in web/app-src/ so it can be named index.html (the
+         standard entry name) WITHOUT colliding with the legacy buildless web/index.html that
+         nginx serves today. Vite emits it to dist/index.html served at the site root "/".
+         Leaflet (JS+CSS), FontAwesome, Inter + JetBrains Mono fonts and the local tokens/styles
+         CSS are all imported (self-hosted, content-hashed) via main.js, so there are NO CDN
+         <link>/<script> tags and NO manual ?v= cache-busters here. -->
+    <script type="module" src="../main.js"></script>
+
+</head>
+
+<body>
+    <div id="map"></div>
+
+    <!-- No Data Available Banner (subtle, non-blocking) -->
+    <div id="no-data-overlay" class="no-data-banner" style="display: none;">
+        <i class="fa-solid fa-triangle-exclamation"></i>
+        <span>No data available for this time period</span>
+    </div>
+
+    <!-- Loading Banner (same position as no-data) -->
+    <div id="loading-overlay" class="loading-banner" style="display: none;">
+        <div class="spinner"></div>
+        <span>Loading layer data...</span>
+    </div>
+
+
+
+    <!-- Top-Right Layer Management Panel (Windy-style right sidebar) -->
+    <div class="layers-panel" data-user-positioned="1">
+        <div id="layer-bubble-bar" class="layer-bubble-bar"></div>
+        <div id="layers-list" class="layers-list">
+            <!-- Layers will be dynamically populated with checkboxes and controls -->
+        </div>
+    </div>
+
+    <!-- Main UI Dock -->
+    <div class="ui-container">
+        <div class="glass-panel" id="bottom-glass-panel">
+            <!-- Drag Handle for bottom panel -->
+            <div id="bottom-panel-drag-handle"
+                style="width: 100%; height: 18px; cursor: grab; display: flex; justify-content: center; align-items: center; position: relative; margin-bottom: 4px;">
+                <div style="width: 40px; height: 4px; background: rgba(255,255,255,0.2); border-radius: 2px;"></div>
+                <button id="minimize-bottom-panel"
+                    style="position: absolute; right: 0; top: 0; background: none; border: none; color: var(--text-secondary); cursor: pointer; font-size: 14px;"
+                    title="Minimize Panel" aria-label="Minimize controls panel">
+                    <i class="fa-solid fa-minus"></i>
+                </button>
+            </div>
+            <div class="controls-grid" id="bottom-controls-grid">
+
+                <!-- Layer Selection - MOVED TO TOP RIGHT PANEL -->
+                <div class="control-item" style="display: none;">
+                    <label for="layer-select"><i class="fa-solid fa-layer-group"></i> Data Layer</label>
+                    <select id="layer-select">
+                        <optgroup label="Static Probability Layers">
+                            <option value="probability_epis10y_1_15">Probability Epis 10y (1-15)</option>
+                            <option value="probability_epis10y_1_3">Probability Epis 10y (1-3)</option>
+                            <option value="probability_epis10y_4_15">Probability Epis 10y (4-15)</option>
+                            <option value="probability_epis100y_1_15">Probability Epis 100y (1-15)</option>
+                            <option value="probability_epis100y_1_3">Probability Epis 100y (1-3)</option>
+                            <option value="probability_epis100y_4_15">Probability Epis 100y (4-15)</option>
+                            <option value="probability_epis500y_1_15">Probability Epis 500y (1-15)</option>
+                            <option value="probability_epis500y_1_3">Probability Epis 500y (1-3)</option>
+                            <option value="probability_epis500y_4_15">Probability Epis 500y (4-15)</option>
+                            <option value="probability_twl10y_1_15">Probability TWL 10y (1-15)</option>
+                            <option value="probability_twl10y_1_3">Probability TWL 10y (1-3)</option>
+                            <option value="probability_twl10y_4_15">Probability TWL 10y (4-15)</option>
+                            <option value="probability_twl100y_1_15">Probability TWL 100y (1-15)</option>
+                            <option value="probability_twl100y_1_3">Probability TWL 100y (1-3)</option>
+                            <option value="probability_twl100y_4_15">Probability TWL 100y (4-15)</option>
+                            <option value="probability_twl500y_1_15">Probability TWL 500y (1-15)</option>
+                            <option value="probability_twl500y_1_3">Probability TWL 500y (1-3)</option>
+                            <option value="probability_twl500y_4_15">Probability TWL 500y (4-15)</option>
+                        </optgroup>
+                        <optgroup label="Coastal Point Layers">
+                            <option value="probability_epis_coast_01_15">Coastal Epis (0.1-1.5)</option>
+                            <option value="probability_epis_coast_01_03">Coastal Epis (0.1-0.3)</option>
+                            <option value="probability_epis_coast_04_15">Coastal Epis (0.4-1.5)</option>
+                            <option value="probability_twl_coast_01_15">Coastal TWL (0.1-1.5)</option>
+                            <option value="probability_twl_coast_01_03">Coastal TWL (0.1-0.3)</option>
+                            <option value="probability_twl_coast_04_15">Coastal TWL (0.4-1.5)</option>
+                        </optgroup>
+                        <optgroup label="Video Layers">
+                            <option value="epis_wl75">Episode WL 75</option>
+
+                            <option value="twl75">Total WL 75</option>
+                        </optgroup>
+                    </select>
+                </div>
+
+                <!-- Time Dimension -->
+                <div class="control-item">
+                    <label for="time-select">
+                        <i class="fa-regular fa-clock"></i> Time Window (UTC)
+                    </label>
+                    <div style="display: flex; flex-direction: column; gap: 6px; width: 100%;">
+                        <!-- Date Stepper -->
+                        <div style="display: flex; align-items: center; gap: 4px; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.2); border-radius: 6px; padding: 2px;">
+                            <button type="button" id="date-prev" class="time-stepper-btn" title="Previous Day" aria-label="Previous day">
+                                <i class="fa-solid fa-chevron-left"></i>
+                            </button>
+                            <input type="date" id="date-select"
+                                style="flex: 1; padding: 4px 2px; border: none; background: transparent; color: white; text-align: center; outline: none; font-size: 12px; font-weight: 500; font-family: inherit;">
+                            <button type="button" id="date-next" class="time-stepper-btn" title="Next Day" aria-label="Next day">
+                                <i class="fa-solid fa-chevron-right"></i>
+                            </button>
+                        </div>
+                        
+                        <!-- Hour Toggle -->
+                        <div style="display: flex; align-items: center; gap: 4px; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.2); border-radius: 6px; padding: 2px;">
+                            <button type="button" id="hour-btn-00" class="hour-toggle-btn hour-toggle-active" data-hour="00" title="00:00 UTC" aria-label="Set time to 00:00 UTC">00:00</button>
+                            <button type="button" id="hour-btn-12" class="hour-toggle-btn" data-hour="12" title="12:00 UTC" aria-label="Set time to 12:00 UTC">12:00</button>
+                            <span style="padding: 2px 6px; font-size: 10px; color: rgba(255,255,255,0.5); font-family: inherit;">UTC</span>
+                            <!-- Hidden select kept for backwards compatibility with app.js listeners -->
+                            <select id="hour-select" style="display:none;">
+                                <option value="00">00:00</option>
+                                <option value="12">12:00</option>
+                            </select>
+                        </div>
+                    </div>
+                    <!-- Hidden proxy input to maintain backwards compatibility with app.js listeners -->
+                    <input type="hidden" id="time-select">
+                    <div style="margin-top: 6px;">
+                        <label for="basemap-select"><i class="fa-solid fa-map"></i> Background Map</label>
+                        <select id="basemap-select">
+                            <option value="esri_world_street" selected>Esri World Street (EN)</option>
+                            <option value="osm">OpenStreetMap</option>
+                            <option value="gisco_positron">GISCO Positron (light)</option>
+                            <option value="gisco_bright">GISCO Bright</option>
+                            <option value="gisco_dark">GISCO Dark Gray</option>
+                            <option value="esri_satellite">Esri Satellite</option>
+                        </select>
+                    </div>
+
+                </div>
+
+                <!-- Active Layers in Bottom Panel -->
+                <div id="active-layers-panel">
+                    <!-- Dynamically populated by multi-layer.js -->
+                </div>
+
+            </div>
+        </div>
+
+        <!-- Restore buttons (hidden by default) -->
+        <button id="restore-bottom-panel"
+            style="display: none; position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); z-index: 1001; background: var(--bg-panel); border: 1px solid var(--border-color); color: var(--primary-color); border-radius: 22px; padding: 0 20px; height: 44px; box-shadow: 0 4px 12px rgba(0,0,0,0.3); cursor: pointer; align-items: center; justify-content: center; gap: 8px; font-weight: 600;"
+            title="Restore Controls" aria-label="Restore controls panel">
+            <i class="fa-solid fa-sliders"></i> Controls
+        </button>
+
+
+</body>
+
+</html>

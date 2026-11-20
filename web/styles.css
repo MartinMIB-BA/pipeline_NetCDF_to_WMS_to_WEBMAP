@@ -538,14 +538,15 @@
             width: 100%;
             max-width: 100%;
             box-sizing: border-box;
-            max-height: 220px;
+            max-height: 400px;
             overflow: auto;
             scrollbar-width: thin;
             scrollbar-color: rgba(255,255,255,0.15) transparent;
         }
 
         .layer-legend-content img {
-            width: 100%;
+            /* Natural size, never upscaled; only shrunk to fit the panel */
+            width: auto;
             max-width: 100%;
             height: auto;
             border-radius: 4px;

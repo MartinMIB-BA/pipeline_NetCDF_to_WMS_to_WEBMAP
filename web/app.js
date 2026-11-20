@@ -1,7 +1,11 @@
 // GeoServer configuration - AUTO DETECT ENVIRONMENT
 window.isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-// const GEOSERVER_URL = window.isLocalhost ? 'http://localhost:8080' : '/geoserver';
-const GEOSERVER_URL = window.isLocalhost ? 'http://89.47.190.54/geoserver' : '/geoserver';
+// GeoServer base URL. Production serves GeoServer behind the same origin at /geoserver.
+// On localhost there is no local GeoServer, so dev hits the live server directly via the
+// staging nginx on port 8082 (same GeoServer backend as production). Port 80 is NOT usable
+// from localhost: it 301-redirects to HTTPS without CORS headers, so the browser blocks every
+// tile/Capabilities request. Port 8082 answers directly with Access-Control-Allow-Origin: *.
+const GEOSERVER_URL = window.isLocalhost ? 'http://89.47.190.54:8082/geoserver' : '/geoserver';
 
 const WORKSPACE = 'E_and_T';
 
@@ -1331,24 +1335,54 @@ window.restoreVideoFrameForZoom = function (layerId, layerData) {
     // No cached frame for the selected day at this zoom yet. Make sure the base WMS layer
     // renders the SELECTED day (not day 0) and is visible, so the map doesn't jump to day 0
     // while frames warm up in the background. Any stale frame instances stay hidden.
+    // SMOOTH ZOOM: do NOT hide the currently visible frame instance right away and do NOT
+    // force redraw() on the base layer. redraw() drops every tile, so hiding the visible
+    // frame at the same moment shows a blank map (the flicker). Instead keep the visible
+    // frame on screen until the base layer has loaded its new-zoom tiles, then hide it.
+    const visibleFrames = [];
     if (window.animationCache) {
         Object.values(window.animationCache).forEach(layer => {
-            if (layer && window.map && window.map.hasLayer(layer)) layer.setOpacity(0);
+            if (!layer || !window.map || !window.map.hasLayer(layer)) return;
+            if (layer.options.opacity > 0) visibleFrames.push(layer);
+            else layer.setOpacity(0);
         });
     }
-    if (layerData.wmsLayer) {
-        const currentElev = layerData.wmsLayer.wmsParams && layerData.wmsLayer.wmsParams.elevation;
-        // Always set the param AND force a redraw. Only comparing the param string and
-        // skipping the redraw let the base layer keep painting stale day-0 tiles after being
-        // uncovered (param said 6 but on-screen tiles were still 0, and day 0 renders fine so
-        // no 400 → no "No data" banner ever appeared). Force the redraw so tiles match the day.
-        layerData.wmsLayer.setParams({ elevation: selectedDay }, false);
-        layerData.wmsLayer.setOpacity(1.0);
-        if (window.map && !window.map.hasLayer(layerData.wmsLayer)) {
-            layerData.wmsLayer.addTo(window.map);
+    const hideVisibleFrames = () => {
+        visibleFrames.forEach(layer => {
+            if (window.map && window.map.hasLayer(layer)) layer.setOpacity(0);
+        });
+    };
+    const base = layerData.wmsLayer;
+    if (base) {
+        const currentElev = base.wmsParams && base.wmsParams.elevation;
+        const hadLayer = window.map && window.map.hasLayer(base);
+        if (String(currentElev) !== String(selectedDay)) {
+            // Day differs: setParams (noRedraw=false) already redraws once. No extra redraw().
+            base.setParams({ elevation: selectedDay }, false);
         }
-        layerData.wmsLayer.redraw();
-        console.log(`🔁 [ZOOM RESTORE] ${layerId} base layer pinned to day ${selectedDay} (elev was ${currentElev}) @ zoom ${fixedZoom}`);
+        base.setOpacity(1.0);
+        if (window.map && !hadLayer) base.addTo(window.map);
+
+        if (!visibleFrames.length) {
+            // Nothing on top to keep: nothing else to do, Leaflet loads the new-zoom tiles.
+        } else if (!base._map || !base.isLoading || !base.isLoading()) {
+            // Base already has its tiles for this zoom → safe to uncover immediately.
+            hideVisibleFrames();
+        } else {
+            let done = false;
+            const finish = () => {
+                if (done) return;
+                done = true;
+                clearTimeout(timer);
+                base.off('load', finish);
+                hideVisibleFrames();
+            };
+            const timer = setTimeout(finish, 4000); // never leave a stale frame on top
+            base.on('load', finish);
+        }
+        console.log(`🔁 [ZOOM RESTORE] ${layerId} base layer on day ${selectedDay} (elev was ${currentElev}) @ zoom ${fixedZoom}`);
+    } else {
+        hideVisibleFrames();
     }
 };
 
@@ -1572,11 +1606,6 @@ async function preloadAllFrames(forceAllFrames = false) {
             currentZoom = 6;
         }
 
-        // Pre-seeded zoom (2-4): all 16 frames are in GWC → ~400ms with warm Nginx cache.
-        // Non-seeded zoom (5+): GeoServer renders tiles from TIFFs → only preload frame 0
-        // automatically. Remaining frames load on-demand when user scrubs or clicks Play.
-        const isSeededZoom = !isGwcLayer || currentZoom <= GWC_MAX_SEEDED_ZOOM;
-
         // NOTE: Do NOT seed layerData.wmsLayer (base layer) into animationCache here.
         // The base layer lives in baseWmsPane (z=350); seeding it causes animateNextFrame
         // to retrieve the base layer for that day and never show real animation frames.
@@ -1632,45 +1661,17 @@ async function preloadAllFrames(forceAllFrames = false) {
         // by the first user action (Play / date-change scrub), NOT by zoom and NOT by a timer, so
         // no background self-re-queue — and no zoom — ever fetches frames 1..N. This applies to
         // every video layer because preloadAllFrames is layer-agnostic.
-        if (window._initialLayerLoadInProgress && !forceAllFrames && totalFrames > 1) {
-            console.log(`⏳ [INITIAL LOAD] Frame 0 ready for ${currentParams.layer} — deferring frames 1-${totalFrames-1} until first Play/scrub`);
+        // PLAY-ONLY PRELOAD: frames 1..N are fetched ONLY when the user presses Play
+        // (startAnimation → preloadAllFrames(true)). Every non-forced call — the auto-preload
+        // fired when a video layer is switched on (multi-layer.js addLayer → autoPreloadVideoLayer),
+        // at startup or at any later time — stops here after frame 0. Previously this deferral only
+        // held during the initial page load (_initialLayerLoadInProgress), so after the first Play
+        // switching to another video layer (e.g. epis_wl75) fired the full 16-frame burst.
+        // Day-slider scrubbing loads single frames on demand via preloadSingleFrame.
+        if (!forceAllFrames && totalFrames > 1) {
+            console.log(`⏳ [AUTO-PRELOAD] Frame 0 ready for ${currentParams.layer} — frames 1-${totalFrames-1} load on Play`);
             playBtn.innerHTML = originalText;
             console.timeEnd('⏱️ Total preload time');
-            return true;
-        }
-
-        // Non-seeded zoom (auto-preload only): load frame 0 immediately (already done above),
-        // then warm up remaining frames 2 at a time in the background with 400ms gaps.
-        // This avoids flooding GeoServer (first render from TIFF) while still warming Nginx cache
-        // so that Play and scrubbing are fast on subsequent visits to the same date.
-        if (!isSeededZoom && !forceAllFrames) {
-            console.log(`🏔️ [ZOOM ${currentZoom}] Non-seeded — frame 0 done, warming frames 1-${totalFrames-1} in background (2/400ms)`);
-            playBtn.innerHTML = originalText;
-            console.timeEnd('⏱️ Total preload time');
-
-            // Background warm-up: 2 frames per 400ms — doesn't block UI, can be cancelled by date change.
-            // Uses a DEDICATED flag (isBackgroundWarming), NOT isAnimationLoading: this loop runs
-            // AFTER preloadAllFrames returns and autoPreloadVideoLayer clears isAnimationLoading, so
-            // if it kept isAnimationLoading true it would make zoomstart's stopAnimation() check and
-            // restoreVideoFrameForZoom's guard treat idle warm-up as "animating" → the day resets to 0.
-            const layerSnapshot = currentParams.layer;
-            const timeSnapshot = currentParams.time;
-            window.isBackgroundWarming = true;
-            (async () => {
-                try {
-                    for (let i = 1; i < totalFrames; i += 2) {
-                        // Stop if date/layer changed or animation started
-                        if (currentParams.layer !== layerSnapshot || currentParams.time !== timeSnapshot
-                                || window.isAnimating || window.isAnimationLoading) break;
-                        const batch = [preloadFrame(i, null, currentZoom)];
-                        if (i + 1 < totalFrames) batch.push(preloadFrame(i + 1, null, currentZoom));
-                        await Promise.all(batch);
-                        await new Promise(r => setTimeout(r, 400));
-                    }
-                } finally {
-                    window.isBackgroundWarming = false;
-                }
-            })();
             return true;
         }
 
@@ -2529,7 +2530,9 @@ document.getElementById('time-select').addEventListener('change', (e) => {
     if (currentMeta && currentMeta.type === 'video') {
         // A date/scrub change is a real user action — end the startup window so the
         // single-frame load below is not suppressed by the startup frame-0-only deferral.
-        window._initialLayerLoadInProgress = false;
+        // Exception: a programmatic metadata-init dispatch (_programmaticTimeInit) must
+        // NOT clear the gate, or the startup frame burst can fire prematurely.
+        if (!window._programmaticTimeInit) window._initialLayerLoadInProgress = false;
         clearAnimationCacheForLayer(currentParams.layer);
         // DO NOT auto-fire the full 16-frame preload on a date change. The full preload
         // (~204 requests per video layer) must run ONLY on an explicit Play press
@@ -3854,8 +3857,14 @@ function applyDateRangeFromMetadata() {
         timeInput.max = maxDate.toISOString().slice(0, 16);
         timeInput.value = latestTime.slice(0, 16); // "YYYY-MM-DDTHH:MM"
 
-        // Trigger change event so any listeners update
+        // Trigger change event so any listeners update.
+        // Mark this as a programmatic (metadata-init) dispatch so the #time-select
+        // change handler does NOT clear the startup preload gate (that must only
+        // happen on real user actions — Play / genuine scrub). The dispatch is
+        // synchronous, so the flag is safely reset immediately after.
+        window._programmaticTimeInit = true;
         timeInput.dispatchEvent(new Event('change'));
+        window._programmaticTimeInit = false;
     }
 
     updateGlobalDateControlsForLayer(getCurrentLayerIdForGlobalTime(), 'metadata init');

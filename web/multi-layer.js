@@ -2,10 +2,11 @@
 // MULTI-LAYER MANAGEMENT SYSTEM
 // ═══════════════════════════════════════════════════════════════
 
-// Active layers (max 3)
+// Active layers (max 4). The app starts with 3 default layers, so 4 leaves room for one more
+// (e.g. Episode WL) without switching a default off first.
 const activeLayers = new Map(); // layerId -> { wmsLayer, time, elevation, opacity, metadata }
 window.activeLayers = activeLayers; // Export for use in app.js (e.g., stopAnimation restore)
-const MAX_LAYERS = 3;
+const MAX_LAYERS = 4;
 let activeLayerDnDBound = false;
 
 // Layer display names for better UX - UPDATED TO MATCH GEOSERVER
@@ -692,15 +693,19 @@ document.addEventListener('click', function (e) {
         img.dataset.scale = '100';
         img.style.width = '';
         img.style.maxWidth = '';
+        img.style.maxHeight = '';
         return;
     }
 
     if (btn.dataset.action === 'grow')   next = Math.min(current + STEP, 200);
     if (btn.dataset.action === 'shrink') next = Math.max(current - STEP, 20);
 
+    // Scale relative to the image's natural size (not the container width)
     img.dataset.scale = next;
-    img.style.width = `${next}%`;
+    const naturalW = img.naturalWidth || img.clientWidth;
+    img.style.width = `${Math.round(naturalW * next / 100)}px`;
     img.style.maxWidth = 'none';
+    img.style.maxHeight = 'none';
 });
 
 // Global set of layerIds whose last tile load cycle had 0 successes.
@@ -1032,7 +1037,8 @@ function addLayer(layerId) {
     updateBottomPanelLayers();
     syncLayerBubbleState();
 
-    // Auto-preload all frames for video layers so slider works instantly without pressing play
+    // Warm frame 0 only for video layers. Frames 1..N load on Play (preloadAllFrames
+    // defers every non-forced call after frame 0 — see app.js "PLAY-ONLY PRELOAD").
     if (isVideo && window.autoPreloadVideoLayer) {
         setTimeout(() => {
             if (activeLayers.has(layerId) && !window.isAnimating && !window.isAnimationLoading) {
@@ -2087,23 +2093,46 @@ document.addEventListener('DOMContentLoaded', function () {
                     window._initialLayerLoadInProgress = true;
                 }
 
-                // Default layers (bottom to top order):
-                // 1. Country Risk choropleth (base context layer)
+                // Default layers — activate bottom-to-top so twl75 ends up the ACTIVE layer
+                // (last .click() wins: addLayer → setCurrentLayer → currentParams.layer).
+                // 1. Country Hazard choropleth (base context)
                 const choroplethCheckbox = document.getElementById('checkbox-country_twl_summary');
                 if (choroplethCheckbox && !choroplethCheckbox.checked) {
                     console.log('🚀 Auto-initializing default layer: country_twl_summary');
                     choroplethCheckbox.click();
                 }
-
-                // 2. GloFAS reporting points — lazy-loaded (opt-in), NOT auto-loaded at startup.
-                // This external third-party WMS (ows.globalfloods.eu) has uncontrollable latency
-                // and competes for the connection budget during first paint. The user can still
-                // toggle it on manually via its checkbox at any time.
-
-                // 3. TWL75 forecast (on top)
+                // 2. GloFAS reporting points
+                const reportingPointsCheckbox = document.getElementById('checkbox-reportingPoints');
+                if (reportingPointsCheckbox && !reportingPointsCheckbox.checked) {
+                    console.log('🚀 Auto-initializing default layer: reportingPoints');
+                    reportingPointsCheckbox.click();
+                }
+                // 3. TWL75 forecast — LAST, so it is the active layer driving date/time + legend
                 if (defaultCheckbox && !defaultCheckbox.checked) {
                     console.log(`🚀 Auto-initializing default layer: ${defaultLayerId}`);
                     defaultCheckbox.click();
+                }
+
+                // FINAL: the active layer (twl75) owns the headline date. The choropleth click above
+                // wrote its lagging weekly week into #time-select (addLayer tail, multi-layer.js:1014/1018);
+                // re-assert twl75's latest daily date so the app opens on the newest forecast, not the past.
+                // Skip when a shared permalink pinned the date.
+                if (!(window._sharedState && window._sharedState.t)) {
+                    const activeLatest = window.wmsMetadata.getLatestTimeForLayer(defaultLayerId); // 'twl75'
+                    const timeInput = document.getElementById('time-select');
+                    if (activeLatest && timeInput) {
+                        const v = activeLatest.slice(0, 16);           // "YYYY-MM-DDTHH:mm"
+                        if (timeInput.value !== v) {
+                            timeInput.value = v;
+                            // Keep the dispatch programmatic so it does NOT clear
+                            // window._initialLayerLoadInProgress (gate read at app.js:2535) and
+                            // reopen the startup frame burst. Dispatch is synchronous — same
+                            // pattern as app.js:3865-3867.
+                            window._programmaticTimeInit = true;
+                            timeInput.dispatchEvent(new Event('change')); // drives currentParams.time + syncs
+                            window._programmaticTimeInit = false;
+                        }
+                    }
                 }
             }
         }).catch(err => {
