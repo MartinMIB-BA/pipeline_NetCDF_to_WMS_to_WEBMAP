@@ -1335,24 +1335,54 @@ window.restoreVideoFrameForZoom = function (layerId, layerData) {
     // No cached frame for the selected day at this zoom yet. Make sure the base WMS layer
     // renders the SELECTED day (not day 0) and is visible, so the map doesn't jump to day 0
     // while frames warm up in the background. Any stale frame instances stay hidden.
+    // SMOOTH ZOOM: do NOT hide the currently visible frame instance right away and do NOT
+    // force redraw() on the base layer. redraw() drops every tile, so hiding the visible
+    // frame at the same moment shows a blank map (the flicker). Instead keep the visible
+    // frame on screen until the base layer has loaded its new-zoom tiles, then hide it.
+    const visibleFrames = [];
     if (window.animationCache) {
         Object.values(window.animationCache).forEach(layer => {
-            if (layer && window.map && window.map.hasLayer(layer)) layer.setOpacity(0);
+            if (!layer || !window.map || !window.map.hasLayer(layer)) return;
+            if (layer.options.opacity > 0) visibleFrames.push(layer);
+            else layer.setOpacity(0);
         });
     }
-    if (layerData.wmsLayer) {
-        const currentElev = layerData.wmsLayer.wmsParams && layerData.wmsLayer.wmsParams.elevation;
-        // Always set the param AND force a redraw. Only comparing the param string and
-        // skipping the redraw let the base layer keep painting stale day-0 tiles after being
-        // uncovered (param said 6 but on-screen tiles were still 0, and day 0 renders fine so
-        // no 400 → no "No data" banner ever appeared). Force the redraw so tiles match the day.
-        layerData.wmsLayer.setParams({ elevation: selectedDay }, false);
-        layerData.wmsLayer.setOpacity(1.0);
-        if (window.map && !window.map.hasLayer(layerData.wmsLayer)) {
-            layerData.wmsLayer.addTo(window.map);
+    const hideVisibleFrames = () => {
+        visibleFrames.forEach(layer => {
+            if (window.map && window.map.hasLayer(layer)) layer.setOpacity(0);
+        });
+    };
+    const base = layerData.wmsLayer;
+    if (base) {
+        const currentElev = base.wmsParams && base.wmsParams.elevation;
+        const hadLayer = window.map && window.map.hasLayer(base);
+        if (String(currentElev) !== String(selectedDay)) {
+            // Day differs: setParams (noRedraw=false) already redraws once. No extra redraw().
+            base.setParams({ elevation: selectedDay }, false);
         }
-        layerData.wmsLayer.redraw();
-        console.log(`🔁 [ZOOM RESTORE] ${layerId} base layer pinned to day ${selectedDay} (elev was ${currentElev}) @ zoom ${fixedZoom}`);
+        base.setOpacity(1.0);
+        if (window.map && !hadLayer) base.addTo(window.map);
+
+        if (!visibleFrames.length) {
+            // Nothing on top to keep: nothing else to do, Leaflet loads the new-zoom tiles.
+        } else if (!base._map || !base.isLoading || !base.isLoading()) {
+            // Base already has its tiles for this zoom → safe to uncover immediately.
+            hideVisibleFrames();
+        } else {
+            let done = false;
+            const finish = () => {
+                if (done) return;
+                done = true;
+                clearTimeout(timer);
+                base.off('load', finish);
+                hideVisibleFrames();
+            };
+            const timer = setTimeout(finish, 4000); // never leave a stale frame on top
+            base.on('load', finish);
+        }
+        console.log(`🔁 [ZOOM RESTORE] ${layerId} base layer on day ${selectedDay} (elev was ${currentElev}) @ zoom ${fixedZoom}`);
+    } else {
+        hideVisibleFrames();
     }
 };
 
